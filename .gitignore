@@ -1,0 +1,93 @@
+# ---------------------------
+# IDE / 에디터
+# ---------------------------
+
+# Visual Studio
+.vs/
+*.sln
+*.suo
+*.user
+*.userosscache
+*.userprefs
+*.VC.db
+*.VC.opendb
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+
+# Rider / 기타 IDE (사용 안 하면 삭제 가능)
+.idea/
+*.ipr
+*.iws
+*.iml
+
+# macOS / Windows 잡파일
+.DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# ---------------------------
+# Unreal Engine 빌드 산출물
+# ---------------------------
+
+# 빌드된 실행 파일 / 라이브러리
+Binaries/*
+Plugins/**/Binaries/*
+
+# 빌드 아웃풋
+Build/*
+!Build/**/*.ico       # 아이콘 리소스는 예외로 포함
+# 필요하면 icns 등도 예외 추가:
+#!Build/**/*.icns
+
+# 맵 빌드 데이터
+*_BuiltData.uasset
+
+# Editor가 생성하는 설정/로그/스크린샷 등
+Saved/*
+# 필요하면 Config 일부만 예외로:
+#!Saved/Config/Windows/EditorPerProjectUserSettings.ini
+
+# 중간 산출물 (Intermediate)
+Intermediate/*
+Plugins/**/Intermediate/*
+
+# 파생 데이터 캐시
+DerivedDataCache/*
+
+# ---------------------------
+# 일반적인 컴파일 산출물
+# ---------------------------
+
+# Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Dynamic/Shared Libraries
+*.so
+*.dylib
+*.dll
+*.dll.lib
+
+# Executables
+*.exe
+*.app
+
+# ---------------------------
+# 기타 잡파일
+# ---------------------------
+*.log
