@@ -1,0 +1,23 @@
+Life관련 사용 설명서
+
+캐릭터 관련 Life의 수치를 건들고 싶으면 QuakeLike_Base폴더에 LJH -> Data의 DA_Life_Default 수치를 조정하면 됩니다
+조정하고" 컴파일과 저장은 필수입니다 "
+
+
+
+Spawner관련 설명서
+
+* 월드 세팅 * 에서 게임모드의 게임 스테이트 클래스가 BP_LJH_GameState로 되어있는지 꼭 확인이 필요합니다!!!!!!!!!
+
+Player를 초기에 스폰하고 싶으면 Player Spawner가 필요합니다 
+LJH -> Item -> Spanwer의 BP_LJH_PlayerSpawner를 드래그 앤 드롭 방식으로 맵에 설치하면 됩니다.
+플레이어가 그 위치 기반으로 생성이 됩니다.
+( 만약 Player Spawner가 없으면 초기 시작 시 관전자모드로 시작됩니다. WASD로 맵 구경 가능 )
+
+Item의 스폰이 필요한 경우 LJH -> Item -> Spawner의 BP_LJH_ItemSpawnerBase를 맵에 드래그 드롭으로 설치하면 됩니다
+설치 후 디테일 패널에 보시면 세팅에 Spawntime이라고 있는데 이 시간에 따라 아이템을 리스폰합니다. Ex) 4초마다 재생성
+그리고 HeldItem에는 데이터 테이블이 DT_LJH_HeldItemList로 되어있는지 확인이 필요합니다 !!
+
+그리고 소환하고 싶은 타입에 따라 행 이름에 있으니 클릭해서 소환하시면 됩니다 
+Ex) Weapon_MachineGun, Ammo_Rocket 등등....
+
