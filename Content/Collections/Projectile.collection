@@ -3,3 +3,6 @@ Type:Static
 Guid:76A2B7F1-489C-8026-6A61-6380A2390E8C
 ParentGuid:00000000-0000-0000-0000-000000000000
 
+/Game/QuakeLike_Base/PJH/DataAsset/DA_PJH_Projectile_PlasmaAsset.DA_PJH_Projectile_PlasmaAsset
+/Game/QuakeLike_Base/PJH/DataAsset/DA_PJH_Projectile_RLauncherAsset.DA_PJH_Projectile_RLauncherAsset
+/Game/QuakeLike_Base/PJH/DataAsset/DA_PJH_ProjectileBaseAsset.DA_PJH_ProjectileBaseAsset
