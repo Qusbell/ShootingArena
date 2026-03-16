@@ -3,4 +3,5 @@ Type:Static
 Guid:0AAE838C-4A9F-C4E6-10CA-38BE402C6F2B
 ParentGuid:00000000-0000-0000-0000-000000000000
 
+/Game/QuakeLike_Base/LJH/Item/DA_GameStateDefault.DA_GameStateDefault
 /Game/QuakeLike_Base/LJH/Item/DropItem/DA_DropItem_Default.DA_DropItem_Default
