@@ -1,0 +1,10 @@
+FileVersion:2
+Type:Static
+Guid:35F08F0F-4114-985D-785A-FEBF44B61A1E
+ParentGuid:00000000-0000-0000-0000-000000000000
+
+/Game/QuakeLike_Base/PJH/DataAsset/DA_PJH_Weapon_MachineAsset.DA_PJH_Weapon_MachineAsset
+/Game/QuakeLike_Base/PJH/DataAsset/DA_PJH_Weapon_PlasmaAsset.DA_PJH_Weapon_PlasmaAsset
+/Game/QuakeLike_Base/PJH/DataAsset/DA_PJH_Weapon_RLauncherAsset.DA_PJH_Weapon_RLauncherAsset
+/Game/QuakeLike_Base/PJH/DataAsset/DA_PJH_Weapon_ShotgunAsset.DA_PJH_Weapon_ShotgunAsset
+/Game/QuakeLike_Base/PJH/DataAsset/DA_PJH_WeaponBaseAsset.DA_PJH_WeaponBaseAsset
