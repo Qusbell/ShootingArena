@@ -30,16 +30,8 @@
 			"Enabled": true
 		},
 		{
-			"Name": "SocketSubsystemSteamIP",
-			"Enabled": true
-		},
-		{
-			"Name": "SteamSockets",
-			"Enabled": true
-		},
-		{
-			"Name": "OnlineSubsystemSteam",
-			"Enabled": true
+			"Name": "AdvancedSteamSessions",
+			"Enabled": false
 		}
 	]
 }
