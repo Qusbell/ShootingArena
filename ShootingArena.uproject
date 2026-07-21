@@ -41,6 +41,10 @@
 				"Win64",
 				"Android"
 			]
+		},
+		{
+			"Name": "JsonBlueprintUtilities",
+			"Enabled": true
 		}
 	]
 }
