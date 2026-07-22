@@ -1,0 +1,61 @@
+{
+  "Rows": 
+  [
+    {
+      "RowName": "EasyDummy",
+      "Data": {
+        "Aim_Skill": 0.2,
+        "Aim_Accuracy": 0.2,
+        "View_Max_Change": 60,
+        "ReactionTime": 2.5,
+        "Aggression": 1.0,
+        "Self_Preservation": 1.0,
+        "Fire_Throttle": 0.9,
+        "Retreat_Threshold": 0.5,
+        "Chase_Threshold": 0.5
+      }
+    },
+    {
+      "RowName": "NormalDummy",
+      "Data": {
+        "Aim_Skill": 0.5,
+        "Aim_Accuracy": 0.5,
+        "View_Max_Change": 180,
+        "ReactionTime": 1.0,
+        "Aggression": 1.0,
+        "Self_Preservation": 1.0,
+        "Fire_Throttle": 0.5,
+        "Retreat_Threshold": 0.5,
+        "Chase_Threshold": 0.5
+      }
+    },
+    {
+      "RowName": "HardDummy",
+      "Data": {
+        "Aim_Skill": 0.9,
+        "Aim_Accuracy": 1.0,
+        "View_Max_Change": 360,
+        "ReactionTime": 0.2,
+        "Aggression": 1.0,
+        "Self_Preservation": 1.0,
+        "Fire_Throttle": 0.2,
+        "Retreat_Threshold": 0.5,
+        "Chase_Threshold": 0.5
+      }
+    },
+    {
+      "RowName": "LoadTestDummy",
+      "Data": {
+        "Aim_Skill": 0.9,
+        "Aim_Accuracy": 1.0,
+        "View_Max_Change": 360,
+        "ReactionTime": 0.2,
+        "Aggression": 1.0,
+        "Self_Preservation": 1.0,
+        "Fire_Throttle": 0.2,
+        "Retreat_Threshold": 0.5,
+        "Chase_Threshold": 0.5
+      }
+    }  
+  ]
+}
