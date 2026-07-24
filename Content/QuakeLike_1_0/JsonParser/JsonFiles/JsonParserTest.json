@@ -1,0 +1,20 @@
+[
+	{
+		"Name": "TestRow_01",
+		"displayName": "첫 번째 테스트 데이터",
+		"count": 20,
+		"value": 3.5
+	},
+	{
+		"Name": "TestRow_02",
+		"displayName": "첫 번째 테스트 데이터",
+		"count": 10,
+		"value": 99.0
+	},
+	{
+		"Name": "TestRow_03",
+		"displayName": "첫 번째 테스트 데이터",
+		"count": 10,
+		"value": 0.5
+	}
+]
