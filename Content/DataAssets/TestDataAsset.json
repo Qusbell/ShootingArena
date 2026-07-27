@@ -1,0 +1,6 @@
+{
+	"bool": true,
+	"string": "테스트123",
+	"int": 5,
+	"float": 3.5
+}
