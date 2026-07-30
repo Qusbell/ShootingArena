@@ -54,6 +54,12 @@ public class JsonAssetSyncEditor : ModuleRules
 				"MessageLog",
 
 				/*
+				 * 자동 Apply And Save 중 Validate On Save를
+				 * 일시 중지하고 복구하는 데 필요하다.
+				 */
+				"DataValidation",
+
+				/*
 				 * 에디터 상단 Tools 메뉴에
 				 * Apply JSON 항목을 추가하는 데 필요하다.
 				 */

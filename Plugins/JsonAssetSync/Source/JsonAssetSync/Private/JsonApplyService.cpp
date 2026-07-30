@@ -14,9 +14,12 @@
 #include "Engine/DataTable.h"
 #include "HAL/FileManager.h"
 #include "Misc/FileHelper.h"
+#include "Misc/PackageName.h"
 #include "Misc/Paths.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
+#include "UObject/Package.h"
+#include "UObject/SavePackage.h"
 
 namespace JsonAssetSync::Private
 {
@@ -83,6 +86,154 @@ namespace JsonAssetSync::Private
 
 		return false;
 	}
+
+#if WITH_EDITOR
+	/**
+	 * 메모리 적용이 끝난 에셋의 패키지를 .uasset으로 저장한다.
+	 *
+	 * Runtime 모듈 안에 있지만 WITH_EDITOR에서만 컴파일되므로
+	 * 패키징 게임에는 저장 코드가 포함되지 않는다.
+	 */
+	bool SaveAppliedAsset(
+		UObject* targetAsset,
+		FJsonApplyResult& inOutResult
+	)
+	{
+		inOutResult.wasSaved = false;
+
+		if (!IsValid(targetAsset))
+		{
+			inOutResult.issues.Add(
+				MakeIssue(
+					EJsonApplyIssueStage::AssetSave,
+					EJsonApplyIssueSeverity::Error,
+					inOutResult.sourceJsonPath,
+					inOutResult.targetAssetPath,
+					TEXT("저장할 대상 에셋이 유효하지 않습니다.")
+				)
+			);
+
+			return false;
+		}
+
+		UPackage* package = targetAsset->GetOutermost();
+
+		if (!IsValid(package) || package == GetTransientPackage())
+		{
+			inOutResult.issues.Add(
+				MakeIssue(
+					EJsonApplyIssueStage::AssetSave,
+					EJsonApplyIssueSeverity::Error,
+					inOutResult.sourceJsonPath,
+					inOutResult.targetAssetPath,
+					TEXT("대상 에셋의 저장 가능한 패키지를 찾지 못했습니다.")
+				)
+			);
+
+			return false;
+		}
+
+		const FString packageName = package->GetName();
+		FString packageFilename;
+
+		if (!FPackageName::TryConvertLongPackageNameToFilename(
+			packageName,
+			packageFilename,
+			FPackageName::GetAssetPackageExtension()
+		))
+		{
+			inOutResult.issues.Add(
+				MakeIssue(
+					EJsonApplyIssueStage::AssetSave,
+					EJsonApplyIssueSeverity::Error,
+					inOutResult.sourceJsonPath,
+					inOutResult.targetAssetPath,
+					FString::Printf(
+						TEXT("패키지 경로를 .uasset 파일 경로로 변환하지 못했습니다: %s"),
+						*packageName
+					)
+				)
+			);
+
+			return false;
+		}
+
+		FPaths::NormalizeFilename(packageFilename);
+
+		if (IFileManager::Get().FileExists(*packageFilename) &&
+			IFileManager::Get().IsReadOnly(*packageFilename))
+		{
+			inOutResult.issues.Add(
+				MakeIssue(
+					EJsonApplyIssueStage::AssetSave,
+					EJsonApplyIssueSeverity::Error,
+					inOutResult.sourceJsonPath,
+					inOutResult.targetAssetPath,
+					FString::Printf(
+						TEXT("에셋 파일이 읽기 전용이라 저장할 수 없습니다. 소스 컨트롤 Checkout 또는 파일 쓰기 권한을 확인하세요: %s"),
+						*packageFilename
+					)
+				)
+			);
+
+			return false;
+		}
+
+		/*
+		 * JSON 적용은 이미 끝났으므로 패키지를 Dirty로 표시한 뒤
+		 * 현재 메모리 상태를 원본 .uasset에 직렬화한다.
+		 */
+		targetAsset->MarkPackageDirty();
+
+		FSavePackageArgs saveArgs;
+		saveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+		saveArgs.SaveFlags = SAVE_None;
+		saveArgs.bWarnOfLongFilename = true;
+
+		const bool saveSucceeded =
+			UPackage::SavePackage(
+				package,
+				targetAsset,
+				*packageFilename,
+				saveArgs
+			);
+
+		if (!saveSucceeded)
+		{
+			inOutResult.issues.Add(
+				MakeIssue(
+					EJsonApplyIssueStage::AssetSave,
+					EJsonApplyIssueSeverity::Error,
+					inOutResult.sourceJsonPath,
+					inOutResult.targetAssetPath,
+					FString::Printf(
+						TEXT("JSON 값은 메모리에 적용됐지만 .uasset 저장에 실패했습니다: %s"),
+						*packageFilename
+					)
+				)
+			);
+
+			return false;
+		}
+
+		inOutResult.wasSaved = true;
+
+		inOutResult.issues.Add(
+			MakeIssue(
+				EJsonApplyIssueStage::AssetSave,
+				EJsonApplyIssueSeverity::Info,
+				inOutResult.sourceJsonPath,
+				inOutResult.targetAssetPath,
+				FString::Printf(
+					TEXT("변경된 에셋을 저장했습니다: %s"),
+					*packageFilename
+				)
+			)
+		);
+
+		return true;
+	}
+#endif
 
 	/**
 	 * Registry의 JSON 상대 경로를 검사하고 정규화한다.
@@ -612,6 +763,7 @@ namespace JsonAssetSync::Private
 		const FString& jsonRelativePath,
 		UObject* targetAsset,
 		const bool applyChanges,
+		const bool saveAppliedAsset,
 		const bool strictValidation,
 		TSet<FString>& inOutSeenJsonPaths,
 		TSet<FString>& inOutSeenTargetAssets
@@ -811,6 +963,17 @@ namespace JsonAssetSync::Private
 					result
 				);
 
+#if WITH_EDITOR
+			if (result.isSuccess && saveAppliedAsset)
+			{
+				result.isSuccess =
+					SaveAppliedAsset(
+						targetDataTable,
+						result
+					);
+			}
+#endif
+
 			return result;
 		}
 
@@ -827,6 +990,17 @@ namespace JsonAssetSync::Private
 					strictValidation,
 					result
 				);
+
+#if WITH_EDITOR
+			if (result.isSuccess && saveAppliedAsset)
+			{
+				result.isSuccess =
+					SaveAppliedAsset(
+						targetDataAsset,
+						result
+					);
+			}
+#endif
 
 			return result;
 		}
@@ -853,7 +1027,8 @@ namespace JsonAssetSync::Private
 	FJsonApplySummary ProcessAll(
 		const UJsonApplyRegistry* registry,
 		const UJsonAssetSyncSettings* settings,
-		const bool applyChanges
+		const bool applyChanges,
+		const bool allowAssetSave
 	)
 	{
 		FJsonApplySummary summary;
@@ -898,6 +1073,21 @@ namespace JsonAssetSync::Private
 
 		summary.isSystemReady = true;
 
+		/*
+		 * Apply And Save는 Unreal Editor에서만 허용한다.
+		 * 패키징 게임에서는 WITH_EDITOR가 false이므로 항상 메모리 적용만 한다.
+		 */
+		bool saveAppliedAssets = false;
+
+#if WITH_EDITOR
+		saveAppliedAssets =
+			allowAssetSave &&
+			GIsEditor &&
+			applyChanges &&
+			settings->editorApplyMode ==
+				EJsonEditorApplyMode::ApplyAndSave;
+#endif
+
 		summary.totalCount =
 			registry->dataTableBindings.Num() +
 			registry->dataAssetBindings.Num();
@@ -916,6 +1106,7 @@ namespace JsonAssetSync::Private
 					binding.jsonRelativePath,
 					binding.targetDataTable.Get(),
 					applyChanges,
+					saveAppliedAssets,
 					settings->strictValidation,
 					seenDataTableJsonPaths,
 					seenTargetAssets
@@ -943,6 +1134,7 @@ namespace JsonAssetSync::Private
 					binding.jsonRelativePath,
 					binding.targetDataAsset.Get(),
 					applyChanges,
+					saveAppliedAssets,
 					settings->strictValidation,
 					seenDataAssetJsonPaths,
 					seenTargetAssets
@@ -1006,6 +1198,9 @@ namespace JsonAssetSync::Private
 
 		case EJsonApplyIssueStage::Commit:
 			return TEXT("Commit");
+
+		case EJsonApplyIssueStage::AssetSave:
+			return TEXT("AssetSave");
 
 		default:
 			return TEXT("Unknown");
@@ -1090,19 +1285,22 @@ FJsonApplySummary FJsonApplyService::ValidateAll(
 	return JsonAssetSync::Private::ProcessAll(
 		registry,
 		settings,
+		false,
 		false
 	);
 }
 
 FJsonApplySummary FJsonApplyService::ApplyAll(
 	const UJsonApplyRegistry* registry,
-	const UJsonAssetSyncSettings* settings
+	const UJsonAssetSyncSettings* settings,
+	const bool allowAssetSave
 )
 {
 	return JsonAssetSync::Private::ProcessAll(
 		registry,
 		settings,
-		true
+		true,
+		allowAssetSave
 	);
 }
 
@@ -1126,9 +1324,11 @@ void FJsonApplyService::WriteSummaryToLog(
 			logSuccessfulApplications)
 		{
 			const TCHAR* successType =
-				result.wasApplied
-					? TEXT("적용 성공")
-					: TEXT("검사 성공");
+				result.wasSaved
+					? TEXT("적용 및 저장 성공")
+					: result.wasApplied
+						? TEXT("적용 성공")
+						: TEXT("검사 성공");
 
 			UE_LOG(
 				LogJsonAssetSync,
