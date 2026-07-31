@@ -79,7 +79,10 @@ enum class EJsonApplyIssueStage : uint8
 	Conversion UMETA(DisplayName = "Conversion"),
 
 	/** 검사가 끝난 데이터를 실제 에셋에 적용하는 과정의 문제다. */
-	Commit UMETA(DisplayName = "Commit")
+	Commit UMETA(DisplayName = "Commit"),
+
+	/** 적용된 에셋 패키지를 디스크의 .uasset으로 저장하는 과정의 문제다. */
+	AssetSave UMETA(DisplayName = "Asset Save")
 };
 
 /**
@@ -192,6 +195,15 @@ public:
 	 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "JSON Asset Sync|Result")
 	bool wasApplied = false;
+
+	/**
+	 * 에디터의 Apply And Save 모드에서
+	 * 변경된 대상 .uasset 저장까지 성공했는지를 나타낸다.
+	 *
+	 * Memory Only와 패키징 게임에서는 항상 false다.
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "JSON Asset Sync|Result")
+	bool wasSaved = false;
 
 	/** 검사한 JSON 파일 경로다. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "JSON Asset Sync|Result")

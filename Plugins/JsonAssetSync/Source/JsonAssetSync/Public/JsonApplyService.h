@@ -29,12 +29,17 @@ public:
 	/**
 	 * Registry 전체를 검사한 뒤 지원되는 대상에 적용한다.
 	 *
-	 * 현재 단계에서는 DataTable 실제 적용을 지원한다.
-	 * DataAsset은 구조 검사까지만 수행한다.
+	 * DataTable과 DataAsset 모두 실제 메모리 적용을 지원한다.
+	 * 에디터에서 Apply And Save 모드이며 allowAssetSave가 true라면
+	 * 적용 성공 후 .uasset도 저장한다.
+	 *
+	 * 패키징 사전검사의 임시 복제본처럼 저장하면 안 되는 대상은
+	 * allowAssetSave를 false로 전달한다.
 	 */
 	static FJsonApplySummary ApplyAll(
 		const UJsonApplyRegistry* registry,
-		const UJsonAssetSyncSettings* settings
+		const UJsonAssetSyncSettings* settings,
+		const bool allowAssetSave = true
 	);
 
 	/**

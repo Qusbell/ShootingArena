@@ -830,7 +830,10 @@ FJsonAssetSyncPackagingPreflight::Run(
 	 *
 	 * 파일 존재, JSON 문법, Row/필드 구조뿐 아니라
 	 * DataTable RowStruct 및 DataAsset UPROPERTY 타입 변환과
-	 * Commit 로직까지 검사할 수 있다.
+	 * Commit 로직까지 검사한다.
+	 *
+	 * 이 Registry와 대상 에셋은 Transient 복제본이므로
+	 * Editor Apply Mode가 Apply And Save여도 디스크 저장은 금지한다.
 	 */
 	UJsonApplyRegistry* transientRegistry =
 		CreateTransientRegistryCopy(
@@ -843,7 +846,8 @@ FJsonAssetSyncPackagingPreflight::Run(
 		report.dryRunSummary =
 			FJsonApplyService::ApplyAll(
 				transientRegistry,
-				settings
+				settings,
+				false // Dry Run 복제본은 메모리 적용만 하고 저장하지 않는다.
 			);
 	}
 

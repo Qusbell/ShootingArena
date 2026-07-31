@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Containers/Ticker.h"
 #include "JsonApplyTypes.h"
 #include "Modules/ModuleManager.h"
 
@@ -43,6 +44,22 @@ private:
 	void HandleEditorInitialized(
 		double editorInitializationDuration
 	);
+
+	/**
+	 * Apply And Save의 시작 자동 적용을 다음 Editor Tick으로 예약한다.
+	 *
+	 * OnEditorInitialized Delegate의 다른 구독자들이 모두 실행된 뒤
+	 * 저장하도록 하여 Blueprint Validator 초기화 경고를 방지한다.
+	 */
+	void ScheduleDeferredEditorAutoApply();
+
+	/**
+	 * 예약된 Apply And Save 자동 적용을 한 번 실행한다.
+	 *
+	 * @param deltaTime Ticker가 전달하는 프레임 간격
+	 * @return 한 번만 실행하므로 false를 반환한다.
+	 */
+	bool HandleDeferredEditorAutoApply(float deltaTime);
 
 	/**
 	 * JSON Asset Sync 전용 Message Log 목록을 등록한다.
@@ -156,6 +173,12 @@ private:
 	 * 에디터 초기화 완료 Delegate에 등록한 Handle이다.
 	 */
 	FDelegateHandle editorInitializedHandle;
+
+	/**
+	 * Apply And Save 시작 자동 적용을 다음 Tick으로 넘기는
+	 * Core Ticker Delegate Handle이다.
+	 */
+	FTSTicker::FDelegateHandle deferredEditorAutoApplyHandle;
 
 	/**
 	 * ToolMenus의 안전한 메뉴 등록 콜백 Handle이다.

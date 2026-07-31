@@ -6,7 +6,9 @@
 #include "JsonAssetSyncSettings.h"
 #include "JsonAssetSyncSubsystem.h"
 
+#include "Containers/Ticker.h"
 #include "Editor.h"
+#include "EditorValidatorSubsystem.h"
 #include "Engine/Engine.h"
 #include "Framework/Commands/UIAction.h"
 #include "Framework/Notifications/NotificationManager.h"
@@ -27,6 +29,53 @@ namespace JsonAssetSyncEditor::Private
 	const FName messageLogName(
 		TEXT("JsonAssetSync")
 	);
+
+	/**
+	 * JSON 자동 저장 중 Unreal의 Validate On Save를 잠시 중지한다.
+	 *
+	 * Apply And Save는 JsonAssetSync 자체 검사를 통과한 대상만 저장한다.
+	 * 에디터 시작 직후에는 Blueprint Validator 등록이 끝나지 않을 수 있으므로,
+	 * 이 범위 안에서 발생하는 프로그램 방식 저장만 엔진 저장 검증에서 제외한다.
+	 *
+	 * Scope가 끝나면 반드시 원래 Validate On Save 상태로 복구한다.
+	 */
+	class FScopedDisableValidateOnSave final
+	{
+	public:
+		FScopedDisableValidateOnSave()
+		{
+			if (GEditor == nullptr)
+			{
+				return;
+			}
+
+			validatorSubsystem =
+				GEditor->GetEditorSubsystem<
+					UEditorValidatorSubsystem
+				>();
+
+			if (IsValid(validatorSubsystem))
+			{
+				validatorSubsystem
+					->PushDisableValidateOnSave();
+			}
+		}
+
+		~FScopedDisableValidateOnSave()
+		{
+			if (IsValid(validatorSubsystem))
+			{
+				validatorSubsystem
+					->PopDisableValidateOnSave();
+			}
+		}
+
+	private:
+		/**
+		 * 현재 에디터의 Data Validation Subsystem이다.
+		 */
+		UEditorValidatorSubsystem* validatorSubsystem = nullptr;
+	};
 
 	/**
 	 * 처리 대상 타입을 읽기 쉬운 문자열로 변환한다.
@@ -77,6 +126,9 @@ namespace JsonAssetSyncEditor::Private
 
 		case EJsonApplyIssueStage::Commit:
 			return TEXT("Commit");
+
+		case EJsonApplyIssueStage::AssetSave:
+			return TEXT("Asset Save");
 
 		default:
 			return TEXT("Unknown");
@@ -227,6 +279,19 @@ void FJsonAssetSyncEditorModule::StartupModule()
 
 void FJsonAssetSyncEditorModule::ShutdownModule()
 {
+	/*
+	 * 아직 실행되지 않은 지연 자동 적용이 있다면
+	 * 모듈 종료 전에 반드시 제거한다.
+	 */
+	if (deferredEditorAutoApplyHandle.IsValid())
+	{
+		FTSTicker::GetCoreTicker().RemoveTicker(
+			deferredEditorAutoApplyHandle
+		);
+
+		deferredEditorAutoApplyHandle.Reset();
+	}
+
 	if (editorInitializedHandle.IsValid())
 	{
 		FEditorDelegates::OnEditorInitialized.Remove(
@@ -263,6 +328,129 @@ void FJsonAssetSyncEditorModule::HandleEditorInitialized(
 	RegisterMessageLog();
 	BindToRuntimeSubsystem();
 	RunPackagingPreflight();
+
+	/*
+	 * Apply And Save의 시작 자동 적용은 OnEditorInitialized의
+	 * 모든 구독자가 처리를 마친 다음 Tick에서 실행한다.
+	 */
+	ScheduleDeferredEditorAutoApply();
+}
+
+void FJsonAssetSyncEditorModule::
+	ScheduleDeferredEditorAutoApply()
+{
+	if (deferredEditorAutoApplyHandle.IsValid())
+	{
+		return;
+	}
+
+	const UJsonAssetSyncSettings* settings =
+		GetDefault<UJsonAssetSyncSettings>();
+
+	if (!IsValid(settings) ||
+		!settings->applyOnEditorStartup ||
+		settings->editorApplyMode !=
+			EJsonEditorApplyMode::ApplyAndSave)
+	{
+		return;
+	}
+
+	/*
+	 * 지연 시간 0은 현재 OnEditorInitialized 호출이 끝난 뒤
+	 * 다음 Core Ticker Tick에서 한 번 실행한다는 의미다.
+	 */
+	deferredEditorAutoApplyHandle =
+		FTSTicker::GetCoreTicker().AddTicker(
+			FTickerDelegate::CreateRaw(
+				this,
+				&FJsonAssetSyncEditorModule::
+					HandleDeferredEditorAutoApply
+			),
+			0.0f
+		);
+}
+
+bool FJsonAssetSyncEditorModule::
+	HandleDeferredEditorAutoApply(
+		const float deltaTime
+	)
+{
+	static_cast<void>(deltaTime);
+
+	/*
+	 * 이 Callback은 한 번만 실행한다.
+	 */
+	deferredEditorAutoApplyHandle.Reset();
+
+	const UJsonAssetSyncSettings* settings =
+		GetDefault<UJsonAssetSyncSettings>();
+
+	/*
+	 * 예약 이후 설정이 변경되었을 수도 있으므로
+	 * 실행 직전에 한 번 더 확인한다.
+	 */
+	if (!IsValid(settings) ||
+		!settings->applyOnEditorStartup ||
+		settings->editorApplyMode !=
+			EJsonEditorApplyMode::ApplyAndSave)
+	{
+		return false;
+	}
+
+	/*
+	 * 에디터 시작 직후 자동 적용이므로 일반적으로 PIE 상태가 아니지만,
+	 * 혹시 플레이가 시작된 경우에는 실행 중 데이터를 바꾸지 않는다.
+	 */
+	if (GEditor != nullptr &&
+		GEditor->PlayWorld != nullptr)
+	{
+		return false;
+	}
+
+	BindToRuntimeSubsystem();
+
+	if (!boundSubsystem.IsValid())
+	{
+		FJsonApplySummary failureSummary;
+
+		FJsonApplyIssue issue;
+		issue.stage = EJsonApplyIssueStage::Registry;
+		issue.severity = EJsonApplyIssueSeverity::Error;
+		issue.message =
+			TEXT(
+				"에디터 시작 자동 적용을 실행할 수 없습니다. "
+				"JsonAssetSyncSubsystem을 가져오지 못했습니다."
+			);
+
+		failureSummary.globalIssues.Add(
+			MoveTemp(issue)
+		);
+
+		HandleProcessingCompleted(failureSummary);
+		return false;
+	}
+
+	/*
+	 * 사용자가 자동 적용 전에 Tools → Apply JSON을 눌렀다면
+	 * 중복 적용·저장을 하지 않는다.
+	 */
+	if (!boundSubsystem->HasCompletedInitialValidation())
+	{
+		/*
+		 * UE 5.6에서는 에디터 시작 직후 저장 시 Blueprint Validator가
+		 * 아직 등록되지 않아 Asset Check 경고가 발생할 수 있다.
+		 *
+		 * JsonAssetSync 자체 검사를 통과한 에셋만 저장하므로,
+		 * 이 자동 저장 호출 범위에서만 Validate On Save를 잠시 중지한다.
+		 */
+		JsonAssetSyncEditor::Private::
+			FScopedDisableValidateOnSave
+			disableValidateOnSaveScope;
+
+		boundSubsystem->ApplyAllNow();
+	}
+
+	return false;
 }
 
 void FJsonAssetSyncEditorModule::RegisterMessageLog()
@@ -474,9 +662,11 @@ void FJsonAssetSyncEditorModule::
 		if (result.isSuccess)
 		{
 			const TCHAR* successText =
-				result.wasApplied
-					? TEXT("적용 성공")
-					: TEXT("검사 성공");
+				result.wasSaved
+					? TEXT("적용 및 저장 성공")
+					: result.wasApplied
+						? TEXT("적용 성공")
+						: TEXT("검사 성공");
 
 			messageLog.Info(
 				FText::FromString(
@@ -956,6 +1146,19 @@ void FJsonAssetSyncEditorModule::UnregisterToolMenus()
 
 void FJsonAssetSyncEditorModule::ExecuteApplyJson()
 {
+	/*
+	 * 예약된 시작 자동 적용 전에 사용자가 직접 실행했다면
+	 * 잠시 뒤 같은 에셋을 다시 저장하지 않도록 예약을 취소한다.
+	 */
+	if (deferredEditorAutoApplyHandle.IsValid())
+	{
+		FTSTicker::GetCoreTicker().RemoveTicker(
+			deferredEditorAutoApplyHandle
+		);
+
+		deferredEditorAutoApplyHandle.Reset();
+	}
+
 	/*
 	 * Runtime Subsystem을 통해 기존 검사·원자적 적용 로직을 실행한다.
 	 *

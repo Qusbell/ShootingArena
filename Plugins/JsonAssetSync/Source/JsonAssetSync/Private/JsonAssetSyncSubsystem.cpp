@@ -79,6 +79,32 @@ HandleEngineLoopInitComplete()
 		 */
 		shouldRunAutomatically =
 			settings->applyOnEditorStartup;
+
+		/*
+		 * Apply And Save는 엔진 초기화 완료 시점에 바로 실행하면
+		 * Blueprint Validator 등 에디터 검증기가 아직 등록 중일 수 있다.
+		 *
+		 * 따라서 이 모드만 Editor 모듈의 OnEditorInitialized 이후
+		 * 다음 Tick으로 넘겨서 적용·저장한다.
+		 *
+		 * Memory Only는 디스크 저장을 하지 않으므로 기존처럼
+		 * 이 시점에 바로 적용해도 된다.
+		 */
+		if (shouldRunAutomatically &&
+			settings->editorApplyMode ==
+				EJsonEditorApplyMode::ApplyAndSave)
+		{
+			UE_LOG(
+				LogJsonAssetSync,
+				Display,
+				TEXT(
+					"Apply And Save 자동 적용을 "
+					"에디터 초기화 이후로 지연합니다."
+				)
+			);
+
+			return;
+		}
 	}
 	else
 #endif
