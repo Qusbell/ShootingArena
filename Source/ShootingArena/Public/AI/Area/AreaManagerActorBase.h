@@ -36,6 +36,8 @@ public:
     void DrawAreaGraphDebug();
 
     const TArray<FAreaBakedConnection>& GetBakedConnections() const { return BakedConnections; }
+    const TArray<FAreaBakedTransitionDistance>& GetBakedTransitionDistances() const { return BakedTransitionDistances; }
+    const TArray<FAreaBakedRetreatPoint>& GetBakedRetreatPoints() const { return BakedRetreatPoints; }
 
     bool ShouldPreferBakedGraph() const { return bPreferBakedGraph; }
     bool ShouldBuildAutomaticNormalLinks() const { return bBuildAutomaticNormalLinks; }
@@ -111,4 +113,12 @@ protected:
     /** RebuildAreaGraph를 눌렀을 때 맵에 저장되는 방향성 연결 목록입니다. */
     UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "AI|Area|Graph")
     TArray<FAreaBakedConnection> BakedConnections;
+
+    /** 연결의 Exit에서 다음 연결 목표까지 에디터에서 미리 계산한 방향성 Nav 거리입니다. */
+    UPROPERTY(VisibleInstanceOnly, Category = "AI|Area|Graph|Cache")
+    TArray<FAreaBakedTransitionDistance> BakedTransitionDistances;
+
+    /** 런타임 후보 Area Nav 투영을 없애기 위해 에디터에서 저장한 Area별 유효 지점입니다. */
+    UPROPERTY(VisibleInstanceOnly, Category = "AI|Area|Graph|Cache")
+    TArray<FAreaBakedRetreatPoint> BakedRetreatPoints;
 };

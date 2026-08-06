@@ -31,7 +31,15 @@ AAreaLinkBase::AAreaLinkBase()
 void AAreaLinkBase::OnConstruction(const FTransform& Transform)
 {
     Super::OnConstruction(Transform);
-    UpdateEndpointPreview();
+
+#if WITH_EDITOR
+    // Endpoint 자동 계산은 에디터 미리보기/Bake에서만 수행합니다.
+    // PIE와 패키징 런타임의 Actor Construction에서는 Nav 조회를 만들지 않습니다.
+    if (UWorld* World = GetWorld(); IsValid(World) && !World->IsGameWorld())
+    {
+        UpdateEndpointPreview();
+    }
+#endif
 }
 
 bool AAreaLinkBase::IsValidLink() const

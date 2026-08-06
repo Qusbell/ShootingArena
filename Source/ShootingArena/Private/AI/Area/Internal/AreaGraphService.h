@@ -22,6 +22,7 @@ struct FAreaDirectedConnection
     float TraversalRiskCost = 0.0f;
     bool bEnabled = true;
     bool bAutomatic = false;
+    int32 BakedConnectionIndex = INDEX_NONE;
 };
 
 /**
@@ -35,6 +36,27 @@ public:
     bool LoadBakedConnections(UWorld* World, const AAreaManagerActorBase* ManagerActor);
 
     void ExportBakedConnections(TArray<FAreaBakedConnection>& OutConnections) const;
+
+    /** 에디터 Rebuild 전용: 고정 연결 사이의 Nav 거리와 Area별 후퇴 지점을 계산합니다. */
+    void BuildEditorNavigationCaches(
+        UWorld* World,
+        float RetreatPointInset,
+        TArray<FAreaBakedTransitionDistance>& OutTransitionDistances,
+        TArray<FAreaBakedRetreatPoint>& OutRetreatPoints) const;
+
+    /** 런타임에는 저장된 캐시만 읽고 NavigationSystem을 호출하지 않습니다. */
+    bool TryGetBakedTransitionDistance(
+        int32 PreviousConnectionIndex,
+        int32 NextConnectionIndex,
+        float& OutDistance,
+        bool& OutReachable) const;
+
+    bool GetBestBakedRetreatPoint(
+        const AAIAreaBase* Area,
+        const FVector& FromPosition,
+        FVector& OutPoint) const;
+
+    bool HasBakedRuntimeCaches() const { return bHasBakedRuntimeCaches; }
     void Reset();
 
     AAIAreaBase* FindAreaByPosition(const FVector& WorldPosition) const;
@@ -100,6 +122,8 @@ private:
         const FVector& End,
         double& OutLength);
 
+    static uint64 MakeTransitionCacheKey(int32 PreviousConnectionIndex, int32 NextConnectionIndex);
+
     TArray<TWeakObjectPtr<AAIAreaBase>> Areas;
     TArray<FAreaDirectedConnection> Connections;
     TMap<const AAIAreaBase*, TArray<int32>> OutgoingConnections;
@@ -107,4 +131,8 @@ private:
 
     /** Rebuild 중 해석하지 못한 수동 Link의 상세 원인을 Validate에 전달합니다. */
     TArray<FString> BuildIssues;
+
+    TMap<uint64, FAreaBakedTransitionDistance> TransitionDistanceCache;
+    TMap<const AAIAreaBase*, TArray<FVector>> RetreatPointsByArea;
+    bool bHasBakedRuntimeCaches = false;
 };

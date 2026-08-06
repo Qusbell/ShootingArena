@@ -65,6 +65,15 @@ struct FAreaRiskDebugSnapshot
     }
 };
 
+/** BT Service가 계산한 후퇴 경로를 Task가 재사용하기 위한 짧은 수명의 내부 캐시입니다. */
+struct FCachedAreaRetreatRoute
+{
+    TWeakObjectPtr<AAIAreaBase> StartArea;
+    FVector StartPosition = FVector::ZeroVector;
+    double StoredWorldTime = 0.0;
+    FAreaRouteResult RouteResult;
+};
+
 /**
  * 외부 Blueprint와 AI 로직이 Area 기능을 호출하는 단일 진입점입니다.
  * 실제 계산은 내부 C++ Service가 담당합니다.
@@ -182,9 +191,45 @@ public:
         const FAreaTraversalCapabilities& TraversalCapabilities,
         FAreaRouteResult& OutResult) const;
 
+    /**
+     * Area와 Link의 위험도 계산을 완전히 생략하고, 저장된 이동거리만으로 최단 경로를 계산합니다.
+     * 전투/추격처럼 위험도보다 도착 속도가 중요한 이동에 사용합니다.
+     * Request.ObserverController와 Request.bIncludeStartAreaRisk는 이 함수에서 사용하지 않습니다.
+     */
+    UFUNCTION(BlueprintCallable, Category = "AI|Area|Route")
+    bool FindAreaRoute(
+        const FAreaRouteRequest& Request,
+        FAreaRouteResult& OutResult) const;
+
+    /** 위험도 없는 최단 경로를 Actor 목표로 계산하는 편의 함수입니다. */
+    UFUNCTION(BlueprintCallable, Category = "AI|Area|Route")
+    bool FindAreaRouteToActor(
+        const FVector& StartPosition,
+        AActor* TargetActor,
+        const FAreaTraversalCapabilities& TraversalCapabilities,
+        FAreaRouteResult& OutResult) const;
+
     /** 현재 등록된 모든 Area를 반환합니다. */
     UFUNCTION(BlueprintCallable, Category = "AI|Area|Debug")
     TArray<AAIAreaBase*> GetRegisteredAreas() const;
+
+    // 아래 함수들은 BT 내부 최적화용 C++ API이며 Blueprint 연결을 새로 만들 필요가 없습니다.
+    bool GetBestBakedRetreatPoint(
+        AAIAreaBase* Area,
+        const FVector& FromPosition,
+        FVector& OutPoint) const;
+
+    void StoreRetreatRouteCache(
+        AAIController* ObserverController,
+        const FVector& StartPosition,
+        const FAreaRouteResult& RouteResult);
+
+    bool TryGetRetreatRouteCache(
+        AAIController* ObserverController,
+        const FVector& CurrentPosition,
+        FAreaRouteResult& OutRouteResult) const;
+
+    void ClearRetreatRouteCache(AAIController* ObserverController);
 
 protected:
     virtual bool DoesSupportWorldType(const EWorldType::Type WorldType) const override;
@@ -245,5 +290,6 @@ private:
     /** Debug CVar가 직전 타이머에도 켜져 있었는지 나타냅니다. */
     bool bWasAreaRiskDebugEnabled = false;
 
+    TMap<TWeakObjectPtr<AAIController>, FCachedAreaRetreatRoute> CachedRetreatRoutes;
     bool bGraphReady = false;
 };

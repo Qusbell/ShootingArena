@@ -5,8 +5,6 @@
 #include "AI/Area/Internal/AreaGraphService.h"
 #include "AI/Area/Internal/AreaRiskService.h"
 #include "Algo/Reverse.h"
-#include "NavFilters/NavigationQueryFilter.h"
-#include "NavigationSystem.h"
 
 namespace AreaRouteFinderPrivate
 {
@@ -26,38 +24,16 @@ namespace AreaRouteFinderPrivate
         bool bVisited = false;
     };
 
-    struct FPathCacheKey
-    {
-        FIntVector Start;
-        FIntVector End;
-
-        bool operator==(const FPathCacheKey& Other) const
-        {
-            return Start == Other.Start && End == Other.End;
-        }
-    };
-
-    uint32 GetTypeHash(const FPathCacheKey& Key)
-    {
-        return HashCombine(GetTypeHash(Key.Start), GetTypeHash(Key.End));
-    }
-
-    static FIntVector QuantizePoint(const FVector& Point)
-    {
-        // 1cm 단위로 양자화해 같은 요청 안의 중복 NavMesh 계산을 캐시합니다.
-        return FIntVector(
-            FMath::RoundToInt(Point.X),
-            FMath::RoundToInt(Point.Y),
-            FMath::RoundToInt(Point.Z));
-    }
-
     static bool IsFiniteScore(const FRouteScore& Score)
     {
         return Score.Risk < TNumericLimits<double>::Max()
             && Score.Distance < TNumericLimits<double>::Max();
     }
 
-    static bool IsBetterScore(const FRouteScore& Candidate, const FRouteScore& Current, const double RiskTolerance)
+    static bool IsBetterScore(
+        const FRouteScore& Candidate,
+        const FRouteScore& Current,
+        const double RiskTolerance)
     {
         if (!IsFiniteScore(Current))
         {
@@ -69,55 +45,70 @@ namespace AreaRouteFinderPrivate
             return true;
         }
 
-        if (FMath::Abs(Candidate.Risk - Current.Risk) <= RiskTolerance
-            && Candidate.Distance < Current.Distance)
-        {
-            return true;
-        }
-
-        return false;
+        return FMath::Abs(Candidate.Risk - Current.Risk) <= RiskTolerance
+            && Candidate.Distance < Current.Distance;
     }
 
-    static bool TryGetTravelDistance(
-        UWorld* World,
-        const FVector& Start,
-        const FVector& End,
-        const bool bAllowStraightLineFallback,
-        TMap<FPathCacheKey, double>& Cache,
+    /**
+     * 런타임 Area 판단에서는 NavigationSystem을 호출하지 않습니다.
+     * 고정된 연결 사이 구간은 에디터에서 저장한 Nav 거리 캐시를 사용하고,
+     * 실제 AI 시작점처럼 미리 고정할 수 없는 첫 구간만 직선거리로 추정합니다.
+     */
+    static bool TryGetWalkDistance(
+        const FAreaGraphService& GraphService,
+        const TArray<FAreaDirectedConnection>& Connections,
+        const FSearchState& CurrentState,
+        const int32 NextConnectionIndex,
+        const FVector& WalkTarget,
         double& OutDistance)
     {
-        const FPathCacheKey Key{QuantizePoint(Start), QuantizePoint(End)};
-        if (const double* Cached = Cache.Find(Key))
+        OutDistance = 0.0;
+
+        if (!Connections.IsValidIndex(NextConnectionIndex))
         {
-            OutDistance = *Cached;
+            return false;
+        }
+
+        // State 0은 움직이는 실제 AI 위치이므로 에디터 캐싱이 불가능합니다.
+        if (CurrentState.ViaConnectionIndex == INDEX_NONE)
+        {
+            OutDistance = FVector::Distance(CurrentState.ArrivalLocation, WalkTarget);
             return true;
         }
 
-        double PathLength = 0.0;
-        const ENavigationQueryResult::Type Result = UNavigationSystemV1::GetPathLength(
-            World,
-            Start,
-            End,
-            PathLength,
-            nullptr,
-            TSubclassOf<UNavigationQueryFilter>());
-
-        if (Result == ENavigationQueryResult::Success)
+        if (!Connections.IsValidIndex(CurrentState.ViaConnectionIndex))
         {
-            Cache.Add(Key, PathLength);
-            OutDistance = PathLength;
+            return false;
+        }
+
+        const FAreaDirectedConnection& PreviousConnection =
+            Connections[CurrentState.ViaConnectionIndex];
+        const FAreaDirectedConnection& NextConnection =
+            Connections[NextConnectionIndex];
+
+        float CachedDistance = 0.0f;
+        bool bCachedReachable = false;
+        const bool bHasCache = GraphService.TryGetBakedTransitionDistance(
+            PreviousConnection.BakedConnectionIndex,
+            NextConnection.BakedConnectionIndex,
+            CachedDistance,
+            bCachedReachable);
+
+        if (bHasCache)
+        {
+            if (!bCachedReachable)
+            {
+                return false;
+            }
+
+            OutDistance = CachedDistance;
             return true;
         }
 
-        if (bAllowStraightLineFallback)
-        {
-            const double StraightDistance = FVector::Distance(Start, End);
-            Cache.Add(Key, StraightDistance);
-            OutDistance = StraightDistance;
-            return true;
-        }
-
-        return false;
+        // 기존 맵을 Rebuild하기 전에도 기능이 완전히 멈추지 않도록 가벼운 호환 Fallback을 사용합니다.
+        // 이 경로에서도 Nav 조회는 발생하지 않으며, Rebuild 후에는 저장된 실제 Nav 거리가 우선됩니다.
+        OutDistance = FVector::Distance(CurrentState.ArrivalLocation, WalkTarget);
+        return true;
     }
 }
 
@@ -131,7 +122,24 @@ FAreaRouteFinder::FAreaRouteFinder(
 {
 }
 
-bool FAreaRouteFinder::FindSafestRoute(const FAreaRouteRequest& Request, FAreaRouteResult& OutResult) const
+bool FAreaRouteFinder::FindSafestRoute(
+    const FAreaRouteRequest& Request,
+    FAreaRouteResult& OutResult) const
+{
+    return FindRouteInternal(Request, OutResult, true);
+}
+
+bool FAreaRouteFinder::FindRoute(
+    const FAreaRouteRequest& Request,
+    FAreaRouteResult& OutResult) const
+{
+    return FindRouteInternal(Request, OutResult, false);
+}
+
+bool FAreaRouteFinder::FindRouteInternal(
+    const FAreaRouteRequest& Request,
+    FAreaRouteResult& OutResult,
+    const bool bUseRisk) const
 {
     using namespace AreaRouteFinderPrivate;
 
@@ -160,6 +168,30 @@ bool FAreaRouteFinder::FindSafestRoute(const FAreaRouteRequest& Request, FAreaRo
 
     const TArray<FAreaDirectedConnection>& Connections = GraphService.GetConnections();
 
+    // 위험도 경로에서는 한 번의 탐색 안에서 같은 Area 위험도를 반복 계산하지 않습니다.
+    // 순수 거리 경로에서는 아래 캐시와 RiskService를 실제로 사용하지 않습니다.
+    TMap<const AAIAreaBase*, double> AreaRiskCache;
+    const auto GetCachedAreaRisk =
+        [&AreaRiskCache, &Request, bUseRisk, this](AAIAreaBase* Area) -> double
+        {
+            // FindAreaRoute에서는 위험도 Service 자체를 호출하지 않습니다.
+            if (!bUseRisk || !IsValid(Area))
+            {
+                return 0.0;
+            }
+
+            if (const double* CachedRisk = AreaRiskCache.Find(Area))
+            {
+                return *CachedRisk;
+            }
+
+            const double Risk = RiskService.GetAreaRiskScore(
+                Area,
+                Request.ObserverController);
+            AreaRiskCache.Add(Area, Risk);
+            return Risk;
+        };
+
     // State 0은 실제 AI 시작 위치입니다.
     // State N+1은 Connections[N]을 통과한 뒤 ExitLocation에 도착한 상태입니다.
     TArray<FSearchState> States;
@@ -167,8 +199,8 @@ bool FAreaRouteFinder::FindSafestRoute(const FAreaRouteRequest& Request, FAreaRo
 
     States[0].Area = StartArea;
     States[0].ArrivalLocation = Request.StartPosition;
-    States[0].BestScore.Risk = Request.bIncludeStartAreaRisk
-        ? RiskService.GetAreaRiskScore(StartArea, Request.ObserverController)
+    States[0].BestScore.Risk = bUseRisk && Request.bIncludeStartAreaRisk
+        ? GetCachedAreaRisk(StartArea)
         : 0.0;
     States[0].BestScore.Distance = 0.0;
 
@@ -180,15 +212,12 @@ bool FAreaRouteFinder::FindSafestRoute(const FAreaRouteRequest& Request, FAreaRo
 
     FRouteScore BestGoalScore;
     int32 BestGoalStateId = INDEX_NONE;
-    TMap<FPathCacheKey, double> PathDistanceCache;
 
     while (true)
     {
         int32 CurrentStateId = INDEX_NONE;
         FRouteScore CurrentBest;
 
-        // 연결 수가 많지 않은 Area 그래프이므로 단순 선형 선택을 사용합니다.
-        // 추후 수백 개 이상으로 커지면 Heap 기반 우선순위 큐로 교체할 수 있습니다.
         for (int32 StateId = 0; StateId < States.Num(); ++StateId)
         {
             const FSearchState& CandidateState = States[StateId];
@@ -198,7 +227,10 @@ bool FAreaRouteFinder::FindSafestRoute(const FAreaRouteRequest& Request, FAreaRo
             }
 
             if (CurrentStateId == INDEX_NONE
-                || IsBetterScore(CandidateState.BestScore, CurrentBest, Request.RiskEqualityTolerance))
+                || IsBetterScore(
+                    CandidateState.BestScore,
+                    CurrentBest,
+                    Request.RiskEqualityTolerance))
             {
                 CurrentStateId = StateId;
                 CurrentBest = CandidateState.BestScore;
@@ -219,31 +251,28 @@ bool FAreaRouteFinder::FindSafestRoute(const FAreaRouteRequest& Request, FAreaRo
             continue;
         }
 
-        // 목표 Area에 도착한 모든 상태에서 실제 목표 위치까지의 마지막 보행 거리를 비교합니다.
+        // 마지막 목표는 런타임에 달라질 수 있어 캐싱할 수 없으므로 가벼운 직선거리만 사용합니다.
         if (CurrentArea == TargetArea)
         {
-            double FinalWalkDistance = 0.0;
-            if (TryGetTravelDistance(
-                WorldPtr,
+            FRouteScore GoalCandidate = CurrentState.BestScore;
+            GoalCandidate.Distance += FVector::Distance(
                 CurrentState.ArrivalLocation,
-                Request.TargetPosition,
-                Request.bAllowStraightLineFallback,
-                PathDistanceCache,
-                FinalWalkDistance))
-            {
-                FRouteScore GoalCandidate = CurrentState.BestScore;
-                GoalCandidate.Distance += FinalWalkDistance;
+                Request.TargetPosition);
 
-                if (BestGoalStateId == INDEX_NONE
-                    || IsBetterScore(GoalCandidate, BestGoalScore, Request.RiskEqualityTolerance))
-                {
-                    BestGoalStateId = CurrentStateId;
-                    BestGoalScore = GoalCandidate;
-                }
+            if (BestGoalStateId == INDEX_NONE
+                || IsBetterScore(
+                    GoalCandidate,
+                    BestGoalScore,
+                    Request.RiskEqualityTolerance))
+            {
+                BestGoalStateId = CurrentStateId;
+                BestGoalScore = GoalCandidate;
             }
         }
 
-        const TArray<int32>& OutgoingIndices = GraphService.GetOutgoingConnectionIndices(CurrentArea);
+        const TArray<int32>& OutgoingIndices =
+            GraphService.GetOutgoingConnectionIndices(CurrentArea);
+
         for (const int32 ConnectionIndex : OutgoingIndices)
         {
             if (!Connections.IsValidIndex(ConnectionIndex))
@@ -263,43 +292,35 @@ bool FAreaRouteFinder::FindSafestRoute(const FAreaRouteRequest& Request, FAreaRo
             const int32 NextStateId = ConnectionIndex + 1;
             FSearchState& NextState = States[NextStateId];
 
+            const FVector WalkTarget = Connection.TraversalType == EAreaTraversalType::Normal
+                ? Connection.ExitLocation
+                : Connection.EntryLocation;
+
             double WalkDistance = 0.0;
-            bool bHasWalkPath = false;
-
-            if (Connection.TraversalType == EAreaTraversalType::Normal)
-            {
-                // Normal은 현재 위치부터 ToArea 안쪽 Exit까지 전체 보행 경로 길이를 사용합니다.
-                bHasWalkPath = TryGetTravelDistance(
-                    WorldPtr,
-                    CurrentState.ArrivalLocation,
-                    Connection.ExitLocation,
-                    Request.bAllowStraightLineFallback,
-                    PathDistanceCache,
-                    WalkDistance);
-            }
-            else
-            {
-                // 특수 Link는 현재 위치부터 입구까지 걸은 뒤 Entry -> Exit 이동을 수행합니다.
-                bHasWalkPath = TryGetTravelDistance(
-                    WorldPtr,
-                    CurrentState.ArrivalLocation,
-                    Connection.EntryLocation,
-                    Request.bAllowStraightLineFallback,
-                    PathDistanceCache,
-                    WalkDistance);
-            }
-
-            if (!bHasWalkPath)
+            if (!TryGetWalkDistance(
+                GraphService,
+                Connections,
+                CurrentState,
+                ConnectionIndex,
+                WalkTarget,
+                WalkDistance))
             {
                 continue;
             }
 
             FRouteScore CandidateScore = CurrentState.BestScore;
-            CandidateScore.Distance += WalkDistance + FMath::Max(0.0f, Connection.TraversalDistanceCost);
-            CandidateScore.Risk += RiskService.GetAreaRiskScore(Connection.ToArea.Get(), Request.ObserverController);
-            CandidateScore.Risk += FMath::Max(0.0f, Connection.TraversalRiskCost);
+            CandidateScore.Distance += WalkDistance
+                + FMath::Max(0.0f, Connection.TraversalDistanceCost);
+            if (bUseRisk)
+            {
+                CandidateScore.Risk += GetCachedAreaRisk(Connection.ToArea.Get());
+                CandidateScore.Risk += FMath::Max(0.0f, Connection.TraversalRiskCost);
+            }
 
-            if (IsBetterScore(CandidateScore, NextState.BestScore, Request.RiskEqualityTolerance))
+            if (IsBetterScore(
+                CandidateScore,
+                NextState.BestScore,
+                Request.RiskEqualityTolerance))
             {
                 NextState.BestScore = CandidateScore;
                 NextState.ParentStateId = CurrentStateId;
@@ -311,7 +332,8 @@ bool FAreaRouteFinder::FindSafestRoute(const FAreaRouteRequest& Request, FAreaRo
 
     if (BestGoalStateId == INDEX_NONE)
     {
-        OutResult.FailureReason = FText::FromString(TEXT("목표 Area까지 사용할 수 있는 경로를 찾지 못했습니다."));
+        OutResult.FailureReason =
+            FText::FromString(TEXT("목표 Area까지 사용할 수 있는 경로를 찾지 못했습니다."));
         return false;
     }
 
@@ -321,9 +343,11 @@ bool FAreaRouteFinder::FindSafestRoute(const FAreaRouteRequest& Request, FAreaRo
     while (TraceStateId != 0 && States.IsValidIndex(TraceStateId))
     {
         const FSearchState& TraceState = States[TraceStateId];
-        if (TraceState.ViaConnectionIndex == INDEX_NONE || TraceState.ParentStateId == INDEX_NONE)
+        if (TraceState.ViaConnectionIndex == INDEX_NONE
+            || TraceState.ParentStateId == INDEX_NONE)
         {
-            OutResult.FailureReason = FText::FromString(TEXT("경로 역추적 중 연결 정보가 끊어졌습니다."));
+            OutResult.FailureReason =
+                FText::FromString(TEXT("경로 역추적 중 연결 정보가 끊어졌습니다."));
             return false;
         }
 
@@ -336,6 +360,13 @@ bool FAreaRouteFinder::FindSafestRoute(const FAreaRouteRequest& Request, FAreaRo
     OutResult.RouteAreas.Add(StartArea);
     for (const int32 ConnectionIndex : ReverseConnectionIndices)
     {
+        if (!Connections.IsValidIndex(ConnectionIndex))
+        {
+            OutResult.FailureReason =
+                FText::FromString(TEXT("경로 결과에 유효하지 않은 연결이 포함되었습니다."));
+            return false;
+        }
+
         const FAreaDirectedConnection& Connection = Connections[ConnectionIndex];
 
         FAreaRouteStep Step;

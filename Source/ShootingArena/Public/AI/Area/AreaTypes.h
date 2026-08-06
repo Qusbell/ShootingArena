@@ -185,6 +185,46 @@ struct SHOOTINGARENA_API FAreaBakedConnection
     bool bAutomatic = false;
 };
 
+/**
+ * 에디터 Rebuild에서 계산해 맵에 저장하는 연결 간 Nav 이동 거리입니다.
+ * PreviousConnectionIndex의 Exit에서 NextConnectionIndex의 보행 목표까지의 거리이며,
+ * 런타임 Area 경로 비교에서는 Nav 조회 없이 이 값만 사용합니다.
+ */
+USTRUCT()
+struct SHOOTINGARENA_API FAreaBakedTransitionDistance
+{
+    GENERATED_BODY()
+
+    UPROPERTY(VisibleAnywhere, Category = "Area|Graph|Cache")
+    int32 PreviousConnectionIndex = INDEX_NONE;
+
+    UPROPERTY(VisibleAnywhere, Category = "Area|Graph|Cache")
+    int32 NextConnectionIndex = INDEX_NONE;
+
+    UPROPERTY(VisibleAnywhere, Category = "Area|Graph|Cache", meta = (ClampMin = "0.0"))
+    float NavDistance = 0.0f;
+
+    /** false이면 에디터 Bake 시점에 두 고정 지점 사이의 Nav 경로가 없었습니다. */
+    UPROPERTY(VisibleAnywhere, Category = "Area|Graph|Cache")
+    bool bReachable = false;
+};
+
+/**
+ * 후퇴 후보마다 ProjectPointToNavigation을 반복하지 않도록 Area별로 저장하는 Nav 유효 지점입니다.
+ * 한 Area에 여러 지점을 저장하고 런타임에는 현재 AI와 가장 가까운 지점만 선택합니다.
+ */
+USTRUCT()
+struct SHOOTINGARENA_API FAreaBakedRetreatPoint
+{
+    GENERATED_BODY()
+
+    UPROPERTY(VisibleAnywhere, Category = "Area|Graph|Cache")
+    TObjectPtr<AAIAreaBase> Area = nullptr;
+
+    UPROPERTY(VisibleAnywhere, Category = "Area|Graph|Cache")
+    FVector Location = FVector::ZeroVector;
+};
+
 /** 최종 경로를 구성하는 한 단계입니다. */
 USTRUCT(BlueprintType)
 struct SHOOTINGARENA_API FAreaRouteStep
@@ -243,7 +283,7 @@ struct SHOOTINGARENA_API FAreaRouteRequest
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Area|Route")
     bool bIncludeStartAreaRisk = false;
 
-    /** NavMesh 경로 길이를 구하지 못했을 때 직선거리로 대체할지 결정합니다. */
+    /** 기존 호출 호환용 옵션입니다. 런타임 Area 비교는 Nav를 호출하지 않고 Bake 캐시 또는 직선거리 보정을 사용합니다. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Area|Route")
     bool bAllowStraightLineFallback = false;
 
@@ -276,7 +316,7 @@ struct SHOOTINGARENA_API FAreaRouteResult
     UPROPERTY(BlueprintReadOnly, Category = "Area|Route")
     float TotalRisk = 0.0f;
 
-    /** 실제로 걸어야 하는 NavMesh 경로 길이와 특수 이동 비용의 합입니다. */
+    /** Bake된 Nav 거리, 동적 시작/종료 구간의 추정 거리, 특수 이동 비용의 합입니다. */
     UPROPERTY(BlueprintReadOnly, Category = "Area|Route")
     float TotalTravelDistance = 0.0f;
 
