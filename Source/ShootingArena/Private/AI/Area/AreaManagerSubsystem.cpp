@@ -67,6 +67,7 @@ void UAreaManagerSubsystem::Initialize(FSubsystemCollectionBase& Collection)
     RouteFinder = new FAreaRouteFinder(GetWorld(), *GraphService, *RiskService);
 
     CachedRiskConfig = nullptr;
+    CachedRetreatRoutes.Reset();
     bGraphReady = false;
 }
 
@@ -78,6 +79,7 @@ void UAreaManagerSubsystem::Deinitialize()
     }
 
     ResetAreaRiskDebugState();
+    CachedRetreatRoutes.Reset();
 
     bGraphReady = false;
     CachedRiskConfig = nullptr;
@@ -139,18 +141,32 @@ bool UAreaManagerSubsystem::RebuildRuntimeGraph()
             TEXT("DA_Area_Risk가 지정되지 않았습니다. 위험도 점수는 0으로 계산됩니다."));
     }
 
+    CachedRetreatRoutes.Reset();
+
     bool bBuilt = false;
 
-    if (IsValid(ManagerActor)
-        && ManagerActor->ShouldPreferBakedGraph()
-        && !ManagerActor->GetBakedConnections().IsEmpty())
+    /*
+     * 런타임에는 Auto Normal 생성, Nav 투영, GetPathLength를 실행하지 않습니다.
+     * Area/Link/Nav 변경 후 에디터의 RebuildAreaGraph로 저장된 데이터만 읽습니다.
+     */
+    if (IsValid(ManagerActor) && !ManagerActor->GetBakedConnections().IsEmpty())
     {
+        if (!ManagerActor->ShouldPreferBakedGraph())
+        {
+            UE_LOG(
+                LogAreaSubsystem,
+                Warning,
+                TEXT("런타임 Nav 계산을 막기 위해 bPreferBakedGraph 설정과 관계없이 저장된 Area Graph를 사용합니다."));
+        }
+
         bBuilt = GraphService->LoadBakedConnections(GetWorld(), ManagerActor);
     }
-
-    if (!bBuilt)
+    else
     {
-        bBuilt = GraphService->BuildFromWorldActors(GetWorld(), ManagerActor);
+        UE_LOG(
+            LogAreaSubsystem,
+            Error,
+            TEXT("저장된 Area Graph가 없습니다. 에디터에서 AreaManager의 RebuildAreaGraph를 실행하고 맵을 저장해야 합니다."));
     }
 
     bGraphReady = bBuilt;
@@ -160,9 +176,18 @@ bool UAreaManagerSubsystem::RebuildRuntimeGraph()
         UE_LOG(
             LogAreaSubsystem,
             Log,
-            TEXT("Area Runtime Graph 준비 완료: Area %d개, 방향성 연결 %d개"),
+            TEXT("Area Runtime Graph 준비 완료: Area %d개, 방향성 연결 %d개, 에디터 Nav 캐시=%s"),
             GraphService->GetAreas().Num(),
-            GraphService->GetConnections().Num());
+            GraphService->GetConnections().Num(),
+            GraphService->HasBakedRuntimeCaches() ? TEXT("Ready") : TEXT("Fallback"));
+
+        if (!GraphService->HasBakedRuntimeCaches())
+        {
+            UE_LOG(
+                LogAreaSubsystem,
+                Warning,
+                TEXT("Area Nav 캐시가 없거나 불완전합니다. 런타임 Nav 조회는 하지 않고 직선거리 Fallback을 사용합니다. RebuildAreaGraph 실행을 권장합니다."));
+        }
     }
     else
     {
@@ -302,6 +327,8 @@ bool UAreaManagerSubsystem::ClearCombatDetectedByPosition(
 void UAreaManagerSubsystem::RemoveObserverRiskMemory(
     AAIController* ObserverController)
 {
+    ClearRetreatRouteCache(ObserverController);
+
     if (RiskService)
     {
         RiskService->RemoveObserverMemory(ObserverController);
@@ -355,6 +382,44 @@ bool UAreaManagerSubsystem::FindSafestAreaRouteToActor(
     return FindSafestAreaRoute(Request, OutResult);
 }
 
+bool UAreaManagerSubsystem::FindAreaRoute(
+    const FAreaRouteRequest& Request,
+    FAreaRouteResult& OutResult) const
+{
+    if (!bGraphReady || !RouteFinder)
+    {
+        OutResult.Reset();
+        OutResult.FailureReason =
+            FText::FromString(TEXT("Area Runtime Graph가 준비되지 않았습니다."));
+        return false;
+    }
+
+    // 위험도 Service를 호출하지 않고 거리만으로 경로를 비교합니다.
+    return RouteFinder->FindRoute(Request, OutResult);
+}
+
+bool UAreaManagerSubsystem::FindAreaRouteToActor(
+    const FVector& StartPosition,
+    AActor* TargetActor,
+    const FAreaTraversalCapabilities& TraversalCapabilities,
+    FAreaRouteResult& OutResult) const
+{
+    if (!IsValid(TargetActor))
+    {
+        OutResult.Reset();
+        OutResult.FailureReason =
+            FText::FromString(TEXT("TargetActor가 유효하지 않습니다."));
+        return false;
+    }
+
+    FAreaRouteRequest Request;
+    Request.StartPosition = StartPosition;
+    Request.TargetPosition = TargetActor->GetActorLocation();
+    Request.TraversalCapabilities = TraversalCapabilities;
+
+    return FindAreaRoute(Request, OutResult);
+}
+
 TArray<AAIAreaBase*> UAreaManagerSubsystem::GetRegisteredAreas() const
 {
     TArray<AAIAreaBase*> Result;
@@ -373,6 +438,85 @@ TArray<AAIAreaBase*> UAreaManagerSubsystem::GetRegisteredAreas() const
     }
 
     return Result;
+}
+
+bool UAreaManagerSubsystem::GetBestBakedRetreatPoint(
+    AAIAreaBase* Area,
+    const FVector& FromPosition,
+    FVector& OutPoint) const
+{
+    return GraphService
+        ? GraphService->GetBestBakedRetreatPoint(Area, FromPosition, OutPoint)
+        : false;
+}
+
+void UAreaManagerSubsystem::StoreRetreatRouteCache(
+    AAIController* ObserverController,
+    const FVector& StartPosition,
+    const FAreaRouteResult& RouteResult)
+{
+    if (!IsValid(ObserverController) || !RouteResult.bSuccess)
+    {
+        ClearRetreatRouteCache(ObserverController);
+        return;
+    }
+
+    const TWeakObjectPtr<AAIController> ObserverKey(ObserverController);
+    FCachedAreaRetreatRoute& Cached = CachedRetreatRoutes.FindOrAdd(ObserverKey);
+    Cached.StartArea = GetAreaByPosition(StartPosition);
+    Cached.StartPosition = StartPosition;
+    Cached.StoredWorldTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+    Cached.RouteResult = RouteResult;
+}
+
+bool UAreaManagerSubsystem::TryGetRetreatRouteCache(
+    AAIController* ObserverController,
+    const FVector& CurrentPosition,
+    FAreaRouteResult& OutRouteResult) const
+{
+    OutRouteResult.Reset();
+
+    if (!IsValid(ObserverController))
+    {
+        return false;
+    }
+
+    const TWeakObjectPtr<AAIController> ObserverKey(ObserverController);
+    const FCachedAreaRetreatRoute* Cached = CachedRetreatRoutes.Find(ObserverKey);
+    if (Cached == nullptr || !Cached->RouteResult.bSuccess)
+    {
+        return false;
+    }
+
+    AAIAreaBase* CurrentArea = GetAreaByPosition(CurrentPosition);
+    if (!Cached->StartArea.IsValid() || Cached->StartArea.Get() != CurrentArea)
+    {
+        return false;
+    }
+
+    const UWorld* World = GetWorld();
+    const double CurrentWorldTime = World ? World->GetTimeSeconds() : 0.0;
+    constexpr double MaxCacheAgeSeconds = 1.0;
+    constexpr float MaxStartMovementDistance = 300.0f;
+
+    if (CurrentWorldTime - Cached->StoredWorldTime > MaxCacheAgeSeconds
+        || FVector::DistSquared(CurrentPosition, Cached->StartPosition)
+            > FMath::Square(MaxStartMovementDistance))
+    {
+        return false;
+    }
+
+    OutRouteResult = Cached->RouteResult;
+    return true;
+}
+
+void UAreaManagerSubsystem::ClearRetreatRouteCache(
+    AAIController* ObserverController)
+{
+    if (ObserverController != nullptr)
+    {
+        CachedRetreatRoutes.Remove(TWeakObjectPtr<AAIController>(ObserverController));
+    }
 }
 
 void UAreaManagerSubsystem::HandleAreaRiskDebugTimer()

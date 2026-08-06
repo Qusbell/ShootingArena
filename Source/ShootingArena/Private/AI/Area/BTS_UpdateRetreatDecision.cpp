@@ -115,6 +115,19 @@ void UBTS_UpdateRetreatDecision::UpdateRetreatDecision(
         needRetreatKey.SelectedKeyName,
         bShouldRetreat);
 
+    if (bShouldRetreat)
+    {
+        // Task가 같은 후퇴 계획을 다시 탐색하지 않도록 Service 결과를 잠시 보관합니다.
+        AreaSubsystem->StoreRetreatRouteCache(
+            OwnerController,
+            ControlledPawn->GetActorLocation(),
+            RetreatPlan.RouteResult);
+    }
+    else
+    {
+        AreaSubsystem->ClearRetreatRouteCache(OwnerController);
+    }
+
     if (!bShouldRetreat)
     {
         Blackboard->SetValueAsBool(isRetreatingKey.SelectedKeyName, false);

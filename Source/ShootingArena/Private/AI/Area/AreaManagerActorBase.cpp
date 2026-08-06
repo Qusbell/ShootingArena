@@ -39,6 +39,15 @@ void AAreaManagerActorBase::RebuildAreaGraph()
         return;
     }
 
+    if (World->IsGameWorld())
+    {
+        UE_LOG(
+            LogAreaManagerActor,
+            Warning,
+            TEXT("RebuildAreaGraph는 에디터 비실행 월드에서만 사용할 수 있습니다. 런타임 Nav 계산은 차단되었습니다."));
+        return;
+    }
+
     FAreaGraphService GraphService;
     if (!GraphService.BuildFromWorldActors(World, this))
     {
@@ -65,16 +74,23 @@ void AAreaManagerActorBase::RebuildAreaGraph()
     }
 
     GraphService.ExportBakedConnections(BakedConnections);
+    GraphService.BuildEditorNavigationCaches(
+        World,
+        AutoNormalInset,
+        BakedTransitionDistances,
+        BakedRetreatPoints);
     MarkPackageDirty();
 
     UE_LOG(
         LogAreaManagerActor,
         Log,
         TEXT(
-            "Area Graph Rebuild 완료: 방향성 연결 %d개, 경고 %d개 "
+            "Area Graph Rebuild 완료: 방향성 연결 %d개, 전환 Nav 캐시 %d개, 후퇴 지점 %d개, 경고 %d개 "
             "[AutoNormal=%s, Nav검증=%s, MaxGap=%.1f, MaxHeight=%.1f, "
             "SampleSpacing=%.1f, DetourRatio=%.2f, ExtraDistance=%.1f]"),
         BakedConnections.Num(),
+        BakedTransitionDistances.Num(),
+        BakedRetreatPoints.Num(),
         Issues.Num(),
         bBuildAutomaticNormalLinks ? TEXT("true") : TEXT("false"),
         bValidateAutoLinksWithNavigation ? TEXT("true") : TEXT("false"),
@@ -91,6 +107,15 @@ void AAreaManagerActorBase::ValidateAreaGraph()
     if (!IsValid(World))
     {
         UE_LOG(LogAreaManagerActor, Error, TEXT("Area Graph Validate 실패: World가 없습니다."));
+        return;
+    }
+
+    if (World->IsGameWorld())
+    {
+        UE_LOG(
+            LogAreaManagerActor,
+            Warning,
+            TEXT("ValidateAreaGraph는 에디터 비실행 월드에서만 사용할 수 있습니다."));
         return;
     }
 
@@ -125,6 +150,8 @@ void AAreaManagerActorBase::ClearBakedAreaGraph()
 #endif
 
     BakedConnections.Reset();
+    BakedTransitionDistances.Reset();
+    BakedRetreatPoints.Reset();
     MarkPackageDirty();
     UE_LOG(LogAreaManagerActor, Log, TEXT("저장된 Area Graph를 비웠습니다."));
 }
@@ -141,6 +168,15 @@ void AAreaManagerActorBase::DrawAreaGraphDebug()
 
     if (ConnectionsToDraw.IsEmpty())
     {
+        if (World->IsGameWorld())
+        {
+            UE_LOG(
+                LogAreaManagerActor,
+                Warning,
+                TEXT("저장된 Area Graph가 없어 런타임 Debug Draw를 생략합니다. 에디터에서 RebuildAreaGraph를 실행하세요."));
+            return;
+        }
+
         FAreaGraphService GraphService;
         GraphService.BuildFromWorldActors(World, this);
         GraphService.ExportBakedConnections(ConnectionsToDraw);

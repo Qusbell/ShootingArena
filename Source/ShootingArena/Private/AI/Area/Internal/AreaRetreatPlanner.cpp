@@ -2,7 +2,6 @@
 
 #include "AIController.h"
 #include "GameFramework/Pawn.h"
-#include "NavigationSystem.h"
 
 #include "AI/Area/AIAreaBase.h"
 #include "AI/Area/AreaManagerSubsystem.h"
@@ -15,6 +14,7 @@ bool FAreaRetreatPlanner::FindBestRetreatPlan(
     const FAreaRetreatPlannerSettings& Settings,
     FAreaRetreatPlan& OutPlan)
 {
+    (void)World;
     OutPlan = FAreaRetreatPlan();
 
     // Runtime Area Graph는 Subsystem BeginPlay에서 준비합니다.
@@ -65,14 +65,16 @@ bool FAreaRetreatPlanner::FindBestRetreatPlan(
         }
 
         FVector CandidateNavPoint = FVector::ZeroVector;
-        if (!TryGetCandidateNavPoint(
-                World,
-                *CandidateArea,
+        if (!AreaSubsystem.GetBestBakedRetreatPoint(
+                CandidateArea,
                 CurrentPosition,
-                Settings,
                 CandidateNavPoint))
         {
-            continue;
+            // 이전 Bake 데이터가 없는 맵도 완전히 멈추지 않도록 Area 내부의 가벼운 좌표를 사용합니다.
+            // RebuildAreaGraph 후에는 에디터에서 Nav 검증된 지점이 항상 우선됩니다.
+            CandidateNavPoint = CandidateArea->GetPointInsideTowards(
+                CurrentPosition,
+                FMath::Max(0.0f, Settings.CandidateInset));
         }
 
         FAreaRouteRequest RouteRequest;
@@ -117,63 +119,6 @@ bool FAreaRetreatPlanner::FindBestRetreatPlan(
     OutPlan.CurrentAreaRisk = CurrentAreaRisk;
     OutPlan.RouteResult = MoveTemp(BestRoute);
     return true;
-}
-
-bool FAreaRetreatPlanner::TryGetCandidateNavPoint(
-    UWorld& World,
-    const AAIAreaBase& CandidateArea,
-    const FVector& FromPosition,
-    const FAreaRetreatPlannerSettings& Settings,
-    FVector& OutNavPoint)
-{
-    OutNavPoint = FVector::ZeroVector;
-
-    UNavigationSystemV1* NavigationSystem =
-        FNavigationSystem::GetCurrent<UNavigationSystemV1>(&World);
-
-    if (!NavigationSystem)
-    {
-        return false;
-    }
-
-    const FVector SafeProjectionExtent(
-        FMath::Max(0.0, Settings.NavProjectionExtent.X),
-        FMath::Max(0.0, Settings.NavProjectionExtent.Y),
-        FMath::Max(0.0, Settings.NavProjectionExtent.Z));
-
-    const ANavigationData* NavData = nullptr;
-    const FSharedConstNavQueryFilter QueryFilter;
-
-    auto TryProjectInsideArea = [&](const FVector& SourcePoint) -> bool
-    {
-        FNavLocation ProjectedLocation;
-        const bool bProjected = NavigationSystem->ProjectPointToNavigation(
-            SourcePoint,
-            ProjectedLocation,
-            SafeProjectionExtent,
-            NavData,
-            QueryFilter);
-
-        if (!bProjected
-            || !CandidateArea.ContainsPosition(ProjectedLocation.Location))
-        {
-            return false;
-        }
-
-        OutNavPoint = ProjectedLocation.Location;
-        return true;
-    };
-
-    const FVector NearSidePoint = CandidateArea.GetPointInsideTowards(
-        FromPosition,
-        FMath::Max(0.0f, Settings.CandidateInset));
-
-    if (TryProjectInsideArea(NearSidePoint))
-    {
-        return true;
-    }
-
-    return TryProjectInsideArea(CandidateArea.GetAreaCenter());
 }
 
 bool FAreaRetreatPlanner::IsRouteExecutable(

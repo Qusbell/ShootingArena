@@ -107,8 +107,10 @@ bool FAreaGraphService::LoadBakedConnections(UWorld* World, const AAreaManagerAc
 
     CollectAreas(World);
 
-    for (const FAreaBakedConnection& Baked : ManagerActor->GetBakedConnections())
+    const TArray<FAreaBakedConnection>& BakedConnections = ManagerActor->GetBakedConnections();
+    for (int32 BakedIndex = 0; BakedIndex < BakedConnections.Num(); ++BakedIndex)
     {
+        const FAreaBakedConnection& Baked = BakedConnections[BakedIndex];
         FAreaDirectedConnection RuntimeConnection;
         RuntimeConnection.FromArea = Baked.FromArea;
         RuntimeConnection.ToArea = Baked.ToArea;
@@ -121,6 +123,7 @@ bool FAreaGraphService::LoadBakedConnections(UWorld* World, const AAreaManagerAc
         RuntimeConnection.TraversalRiskCost = Baked.TraversalRiskCost;
         RuntimeConnection.bEnabled = Baked.bEnabled;
         RuntimeConnection.bAutomatic = Baked.bAutomatic;
+        RuntimeConnection.BakedConnectionIndex = BakedIndex;
 
         if (AreaGraphServicePrivate::IsConnectionDataValid(RuntimeConnection))
         {
@@ -129,6 +132,23 @@ bool FAreaGraphService::LoadBakedConnections(UWorld* World, const AAreaManagerAc
     }
 
     RebuildAdjacency();
+
+    for (const FAreaBakedTransitionDistance& Cached : ManagerActor->GetBakedTransitionDistances())
+    {
+        TransitionDistanceCache.Add(
+            MakeTransitionCacheKey(Cached.PreviousConnectionIndex, Cached.NextConnectionIndex),
+            Cached);
+    }
+
+    for (const FAreaBakedRetreatPoint& CachedPoint : ManagerActor->GetBakedRetreatPoints())
+    {
+        if (IsValid(CachedPoint.Area))
+        {
+            RetreatPointsByArea.FindOrAdd(CachedPoint.Area).Add(CachedPoint.Location);
+        }
+    }
+
+    bHasBakedRuntimeCaches = !TransitionDistanceCache.IsEmpty() && !RetreatPointsByArea.IsEmpty();
     return Areas.Num() > 0 && Connections.Num() > 0;
 }
 
@@ -160,6 +180,180 @@ void FAreaGraphService::ExportBakedConnections(TArray<FAreaBakedConnection>& Out
     }
 }
 
+void FAreaGraphService::BuildEditorNavigationCaches(
+    UWorld* World,
+    const float RetreatPointInset,
+    TArray<FAreaBakedTransitionDistance>& OutTransitionDistances,
+    TArray<FAreaBakedRetreatPoint>& OutRetreatPoints) const
+{
+    OutTransitionDistances.Reset();
+    OutRetreatPoints.Reset();
+
+    if (!IsValid(World))
+    {
+        return;
+    }
+
+    // 이전 연결의 Exit에서 같은 Area의 다음 연결 목표까지의 고정 구간을 에디터에서 한 번만 계산합니다.
+    for (int32 PreviousIndex = 0; PreviousIndex < Connections.Num(); ++PreviousIndex)
+    {
+        const FAreaDirectedConnection& Previous = Connections[PreviousIndex];
+        AAIAreaBase* ArrivalArea = Previous.ToArea.Get();
+        if (!IsValid(ArrivalArea))
+        {
+            continue;
+        }
+
+        const TArray<int32>& NextIndices = GetOutgoingConnectionIndices(ArrivalArea);
+        for (const int32 NextIndex : NextIndices)
+        {
+            if (!Connections.IsValidIndex(NextIndex))
+            {
+                continue;
+            }
+
+            const FAreaDirectedConnection& Next = Connections[NextIndex];
+            const FVector WalkTarget = Next.TraversalType == EAreaTraversalType::Normal
+                ? Next.ExitLocation
+                : Next.EntryLocation;
+
+            FAreaBakedTransitionDistance& Cached = OutTransitionDistances.AddDefaulted_GetRef();
+            Cached.PreviousConnectionIndex = PreviousIndex;
+            Cached.NextConnectionIndex = NextIndex;
+
+            double PathLength = 0.0;
+            Cached.bReachable = TryGetNavigationPathLength(
+                World,
+                Previous.ExitLocation,
+                WalkTarget,
+                PathLength);
+            Cached.NavDistance = Cached.bReachable
+                ? static_cast<float>(FMath::Max(0.0, PathLength))
+                : 0.0f;
+        }
+    }
+
+    // Area 중심과 연결 Endpoint를 Area 안쪽으로 보정한 뒤 NavMesh에 투영해 여러 후퇴 후보를 저장합니다.
+    const float SafeInset = FMath::Max(0.0f, RetreatPointInset);
+    constexpr float MergeDistance = 50.0f;
+    const float MergeDistanceSquared = FMath::Square(MergeDistance);
+
+    for (const TWeakObjectPtr<AAIAreaBase>& AreaPtr : Areas)
+    {
+        AAIAreaBase* Area = AreaPtr.Get();
+        if (!IsValid(Area))
+        {
+            continue;
+        }
+
+        TArray<FVector> RawCandidates;
+        RawCandidates.Add(Area->GetAreaCenter());
+
+        for (const FAreaDirectedConnection& Connection : Connections)
+        {
+            if (Connection.FromArea.Get() == Area)
+            {
+                RawCandidates.Add(Area->GetClosestPointInArea(Connection.EntryLocation, SafeInset));
+            }
+
+            if (Connection.ToArea.Get() == Area)
+            {
+                RawCandidates.Add(Area->GetClosestPointInArea(Connection.ExitLocation, SafeInset));
+            }
+        }
+
+        TArray<FVector> AddedPoints;
+        for (const FVector& RawCandidate : RawCandidates)
+        {
+            FVector ProjectedPoint;
+            if (!TryProjectCandidateToNavigation(World, Area, RawCandidate, ProjectedPoint))
+            {
+                continue;
+            }
+
+            bool bDuplicate = false;
+            for (const FVector& Existing : AddedPoints)
+            {
+                if (FVector::DistSquared(Existing, ProjectedPoint) <= MergeDistanceSquared)
+                {
+                    bDuplicate = true;
+                    break;
+                }
+            }
+
+            if (bDuplicate)
+            {
+                continue;
+            }
+
+            AddedPoints.Add(ProjectedPoint);
+
+            FAreaBakedRetreatPoint& CachedPoint = OutRetreatPoints.AddDefaulted_GetRef();
+            CachedPoint.Area = Area;
+            CachedPoint.Location = ProjectedPoint;
+        }
+    }
+}
+
+bool FAreaGraphService::TryGetBakedTransitionDistance(
+    const int32 PreviousConnectionIndex,
+    const int32 NextConnectionIndex,
+    float& OutDistance,
+    bool& OutReachable) const
+{
+    OutDistance = 0.0f;
+    OutReachable = false;
+
+    const FAreaBakedTransitionDistance* Cached = TransitionDistanceCache.Find(
+        MakeTransitionCacheKey(PreviousConnectionIndex, NextConnectionIndex));
+    if (Cached == nullptr)
+    {
+        return false;
+    }
+
+    OutDistance = FMath::Max(0.0f, Cached->NavDistance);
+    OutReachable = Cached->bReachable;
+    return true;
+}
+
+bool FAreaGraphService::GetBestBakedRetreatPoint(
+    const AAIAreaBase* Area,
+    const FVector& FromPosition,
+    FVector& OutPoint) const
+{
+    OutPoint = FVector::ZeroVector;
+
+    const TArray<FVector>* Points = RetreatPointsByArea.Find(Area);
+    if (Points == nullptr || Points->IsEmpty())
+    {
+        return false;
+    }
+
+    double BestDistanceSquared = TNumericLimits<double>::Max();
+    bool bFound = false;
+
+    for (const FVector& Point : *Points)
+    {
+        const double DistanceSquared = FVector::DistSquared(FromPosition, Point);
+        if (!bFound || DistanceSquared < BestDistanceSquared)
+        {
+            bFound = true;
+            BestDistanceSquared = DistanceSquared;
+            OutPoint = Point;
+        }
+    }
+
+    return bFound;
+}
+
+uint64 FAreaGraphService::MakeTransitionCacheKey(
+    const int32 PreviousConnectionIndex,
+    const int32 NextConnectionIndex)
+{
+    return (static_cast<uint64>(static_cast<uint32>(PreviousConnectionIndex)) << 32)
+        | static_cast<uint64>(static_cast<uint32>(NextConnectionIndex));
+}
+
 void FAreaGraphService::Reset()
 {
     Areas.Reset();
@@ -167,6 +361,9 @@ void FAreaGraphService::Reset()
     OutgoingConnections.Reset();
     EmptyConnectionIndices.Reset();
     BuildIssues.Reset();
+    TransitionDistanceCache.Reset();
+    RetreatPointsByArea.Reset();
+    bHasBakedRuntimeCaches = false;
 }
 
 AAIAreaBase* FAreaGraphService::FindAreaByPosition(const FVector& WorldPosition) const
