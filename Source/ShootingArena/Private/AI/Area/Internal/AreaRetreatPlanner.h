@@ -45,13 +45,6 @@ public:
         FAreaRetreatPlan& OutPlan);
 
 private:
-    static bool TryGetCandidateNavPoint(
-        UWorld& World,
-        const AAIAreaBase& CandidateArea,
-        const FVector& FromPosition,
-        const FAreaRetreatPlannerSettings& Settings,
-        FVector& OutNavPoint);
-
     static bool IsRouteExecutable(const FAreaRouteResult& RouteResult);
 
     static bool IsCandidateRouteBetter(

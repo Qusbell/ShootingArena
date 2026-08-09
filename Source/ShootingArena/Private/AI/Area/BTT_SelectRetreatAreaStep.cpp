@@ -102,31 +102,44 @@ EBTNodeResult::Type UBTT_SelectRetreatAreaStep::ExecuteTask(
         return EBTNodeResult::Failed;
     }
 
-    FAreaRetreatPlannerSettings Settings;
-    Settings.TraversalCapabilities = traversalCapabilities;
-    Settings.MinimumRiskImprovement = minimumRiskImprovement;
-    Settings.RiskEqualityTolerance = riskEqualityTolerance;
-    Settings.NavProjectionExtent = navProjectionExtent;
-    Settings.CandidateInset = candidateInset;
+    FAreaRouteResult RetreatRoute;
 
-    FAreaRetreatPlan RetreatPlan;
-    if (!FAreaRetreatPlanner::FindBestRetreatPlan(
-            *World,
-            *AreaSubsystem,
-            *OwnerController,
-            *ControlledPawn,
-            Settings,
-            RetreatPlan))
+    // 일반적으로 Service가 직전에 계산한 경로를 그대로 사용합니다.
+    // 캐시가 없거나 오래된 예외 상황에서만 가벼워진 Planner를 한 번 다시 실행합니다.
+    if (!AreaSubsystem->TryGetRetreatRouteCache(
+            OwnerController,
+            ControlledPawn->GetActorLocation(),
+            RetreatRoute))
     {
-        Blackboard->SetValueAsBool(needRetreatKey.SelectedKeyName, false);
-        return EBTNodeResult::Failed;
+        FAreaRetreatPlannerSettings Settings;
+        Settings.TraversalCapabilities = traversalCapabilities;
+        Settings.MinimumRiskImprovement = minimumRiskImprovement;
+        Settings.RiskEqualityTolerance = riskEqualityTolerance;
+        Settings.NavProjectionExtent = navProjectionExtent;
+        Settings.CandidateInset = candidateInset;
+
+        FAreaRetreatPlan RetreatPlan;
+        if (!FAreaRetreatPlanner::FindBestRetreatPlan(
+                *World,
+                *AreaSubsystem,
+                *OwnerController,
+                *ControlledPawn,
+                Settings,
+                RetreatPlan))
+        {
+            AreaSubsystem->ClearRetreatRouteCache(OwnerController);
+            Blackboard->SetValueAsBool(needRetreatKey.SelectedKeyName, false);
+            return EBTNodeResult::Failed;
+        }
+
+        RetreatRoute = MoveTemp(RetreatPlan.RouteResult);
     }
 
     if (!WriteFirstRouteStepToBlackboard(
             *Blackboard,
             *World,
             *OwnerController,
-            RetreatPlan.RouteResult))
+            RetreatRoute))
     {
         ResetBlackboardOutputs(*Blackboard);
         Blackboard->SetValueAsBool(needRetreatKey.SelectedKeyName, false);
