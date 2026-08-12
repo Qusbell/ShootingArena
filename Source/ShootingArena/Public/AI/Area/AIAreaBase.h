@@ -69,6 +69,14 @@ public:
 
     UBoxComponent* GetAreaBoxComponent() const { return AreaBounds; }
 
+    /**
+     * 레벨에 배치한 Area의 중심에서 사방(+X/-X/+Y/-Y)으로 에디터 Trace를 쏴
+     * 가장 먼저 만나는 레벨 지오메트리까지 Area의 XY 범위를 맞춥니다.
+     * Z 위치와 높이는 기존 값을 그대로 유지합니다.
+     */
+    UFUNCTION(CallInEditor, BlueprintCallable, Category = "AI|Area|Editor")
+    void FitAreaToSurroundings();
+
 #if WITH_EDITOR
     /** 에디터 속성이 갱신될 때 Area Name도 다시 확인합니다. */
     virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
@@ -123,6 +131,33 @@ protected:
     /** Construction이 반복되어도 Dynamic Material을 GC로부터 유지합니다. */
     UPROPERTY(Transient)
     TObjectPtr<UMaterialInstanceDynamic> AreaDebugMID = nullptr;
+
+    /** 사방 Trace가 벽/지오메트리를 찾을 최대 거리입니다. */
+    UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "AI|Area|Auto Fit",
+        meta = (ClampMin = "100.0", UIMin = "500.0", UIMax = "10000.0"))
+    float AutoFitMaxTraceDistance = 5000.0f;
+
+    /**
+     * 수평 Trace를 Area 중심보다 위에서 쏘는 높이입니다.
+     * Area Actor를 바닥에 배치해도 Trace가 바닥 면에 바로 걸리지 않게 하는 용도입니다.
+     */
+    UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "AI|Area|Auto Fit",
+        meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "500.0"))
+    float AutoFitTraceHeightOffset = 100.0f;
+
+    /** 벽과 Area 경계가 정확히 겹치지 않도록 Hit 지점에서 안쪽으로 띄우는 거리입니다. */
+    UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "AI|Area|Auto Fit",
+        meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "200.0"))
+    float AutoFitWallInset = 20.0f;
+
+    /** 버튼 실행 시 사용한 Trace를 에디터 월드에 잠시 표시할지 결정합니다. */
+    UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "AI|Area|Auto Fit")
+    bool bDrawAutoFitTraces = true;
+
+    /** Auto Fit Trace 디버그 선이 유지되는 시간입니다. */
+    UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "AI|Area|Auto Fit",
+        meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "30.0"))
+    float AutoFitDebugDrawDuration = 3.0f;
 #endif
 
     /**
