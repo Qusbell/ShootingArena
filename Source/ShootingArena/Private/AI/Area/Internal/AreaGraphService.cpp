@@ -77,6 +77,14 @@ bool FAreaGraphService::BuildFromWorldActors(UWorld* World, const AAreaManagerAc
 {
     Reset();
 
+    if (IsValid(ManagerActor))
+    {
+        NearestAreaFallbackMaxDistance =
+            FMath::Max(0.0f, ManagerActor->GetNearestAreaFallbackMaxDistance());
+        NearestAreaDistanceTieTolerance =
+            FMath::Max(0.0f, ManagerActor->GetNearestAreaDistanceTieTolerance());
+    }
+
     if (!IsValid(World))
     {
         return false;
@@ -104,6 +112,11 @@ bool FAreaGraphService::LoadBakedConnections(UWorld* World, const AAreaManagerAc
     {
         return false;
     }
+
+    NearestAreaFallbackMaxDistance =
+        FMath::Max(0.0f, ManagerActor->GetNearestAreaFallbackMaxDistance());
+    NearestAreaDistanceTieTolerance =
+        FMath::Max(0.0f, ManagerActor->GetNearestAreaDistanceTieTolerance());
 
     CollectAreas(World);
 
@@ -364,12 +377,27 @@ void FAreaGraphService::Reset()
     TransitionDistanceCache.Reset();
     RetreatPointsByArea.Reset();
     bHasBakedRuntimeCaches = false;
+    NearestAreaFallbackMaxDistance = 0.0f;
+    NearestAreaDistanceTieTolerance = 1.0f;
 }
 
 AAIAreaBase* FAreaGraphService::FindAreaByPosition(const FVector& WorldPosition) const
 {
+    // 실제 Area 내부라면 기존 판정을 그대로 우선합니다.
+    if (AAIAreaBase* ContainingArea = FindContainingAreaByPosition(WorldPosition))
+    {
+        return ContainingArea;
+    }
+
+    // Area 사이의 작은 빈 공간만 보완합니다. 맵 밖처럼 너무 먼 위치는 기존처럼 None입니다.
+    return FindAreaByPositionOrNearest(
+        WorldPosition,
+        NearestAreaFallbackMaxDistance);
+}
+
+AAIAreaBase* FAreaGraphService::FindContainingAreaByPosition(const FVector& WorldPosition) const
+{
     AAIAreaBase* BestArea = nullptr;
-    double BestVolume = TNumericLimits<double>::Max();
 
     for (const TWeakObjectPtr<AAIAreaBase>& AreaPtr : Areas)
     {
@@ -379,12 +407,9 @@ AAIAreaBase* FAreaGraphService::FindAreaByPosition(const FVector& WorldPosition)
             continue;
         }
 
-        // Area가 겹칠 경우 더 구체적인 작은 Area를 우선합니다.
-        const FVector Extent = Area->GetAreaExtent();
-        const double Volume = static_cast<double>(Extent.X) * Extent.Y * Extent.Z * 8.0;
-        if (Volume < BestVolume)
+        // 겹친 Area는 더 작은 Area를 우선하고, 완전 동률이면 AreaId/Path로 고정합니다.
+        if (!IsValid(BestArea) || IsAreaPreferredOnTie(Area, BestArea))
         {
-            BestVolume = Volume;
             BestArea = Area;
         }
     }
@@ -396,38 +421,118 @@ AAIAreaBase* FAreaGraphService::FindAreaByPositionOrNearest(
     const FVector& WorldPosition,
     const float MaxDistance) const
 {
-    if (AAIAreaBase* ContainingArea = FindAreaByPosition(WorldPosition))
+    // Link Endpoint 판정에서는 일반 nearest fallback 최대 거리 대신 이 함수의 MaxDistance를 반드시 따릅니다.
+    if (AAIAreaBase* ContainingArea = FindContainingAreaByPosition(WorldPosition))
     {
         return ContainingArea;
     }
 
-    if (MaxDistance <= 0.0f)
+    const double SafeMaxDistance = FMath::Max(0.0, static_cast<double>(MaxDistance));
+    if (SafeMaxDistance <= 0.0)
     {
         return nullptr;
     }
 
+    const double TieTolerance =
+        FMath::Max(0.0, static_cast<double>(NearestAreaDistanceTieTolerance));
+
     AAIAreaBase* BestArea = nullptr;
-    double BestDistanceSquared = FMath::Square(static_cast<double>(MaxDistance));
+    double BestDistance = SafeMaxDistance;
 
     for (const TWeakObjectPtr<AAIAreaBase>& AreaPtr : Areas)
     {
         AAIAreaBase* Area = AreaPtr.Get();
-        if (!IsValid(Area))
+        if (!IsValid(Area) || !Area->IsAreaEnabled())
         {
             continue;
         }
 
+        // Actor 중심이 아니라 실제 회전 Box 경계까지의 거리를 사용합니다.
         const FVector ClosestPoint = Area->GetClosestPointInArea(WorldPosition, 0.0f);
-        const double DistanceSquared = FVector::DistSquared(WorldPosition, ClosestPoint);
+        const double Distance = FVector::Distance(WorldPosition, ClosestPoint);
 
-        if (DistanceSquared <= BestDistanceSquared)
+        if (Distance > SafeMaxDistance)
         {
-            BestDistanceSquared = DistanceSquared;
+            continue;
+        }
+
+        if (!IsValid(BestArea) || Distance < BestDistance - TieTolerance)
+        {
             BestArea = Area;
+            BestDistance = Distance;
+            continue;
+        }
+
+        if (FMath::Abs(Distance - BestDistance) <= TieTolerance)
+        {
+            const bool bPreferCandidate = IsAreaPreferredOnTie(Area, BestArea);
+            BestDistance = FMath::Min(BestDistance, Distance);
+
+            if (bPreferCandidate)
+            {
+                BestArea = Area;
+            }
         }
     }
 
     return BestArea;
+}
+
+bool FAreaGraphService::IsAreaPreferredOnTie(
+    const AAIAreaBase* Candidate,
+    const AAIAreaBase* CurrentBest)
+{
+    if (!IsValid(Candidate))
+    {
+        return false;
+    }
+
+    if (!IsValid(CurrentBest))
+    {
+        return true;
+    }
+
+    const FVector CandidateExtent = Candidate->GetAreaExtent();
+    const FVector BestExtent = CurrentBest->GetAreaExtent();
+
+    const double CandidateVolume =
+        static_cast<double>(CandidateExtent.X)
+        * static_cast<double>(CandidateExtent.Y)
+        * static_cast<double>(CandidateExtent.Z)
+        * 8.0;
+
+    const double BestVolume =
+        static_cast<double>(BestExtent.X)
+        * static_cast<double>(BestExtent.Y)
+        * static_cast<double>(BestExtent.Z)
+        * 8.0;
+
+    const double VolumeTolerance =
+        FMath::Max(1.0, FMath::Max(CandidateVolume, BestVolume) * 1.0e-6);
+
+    if (CandidateVolume < BestVolume - VolumeTolerance)
+    {
+        return true;
+    }
+
+    if (CandidateVolume > BestVolume + VolumeTolerance)
+    {
+        return false;
+    }
+
+    const FString CandidateAreaId = Candidate->GetAreaId().ToString();
+    const FString BestAreaId = CurrentBest->GetAreaId().ToString();
+    const int32 AreaIdCompare = CandidateAreaId.Compare(BestAreaId, ESearchCase::IgnoreCase);
+
+    if (AreaIdCompare != 0)
+    {
+        return AreaIdCompare < 0;
+    }
+
+    // 중복 AreaId까지 존재하더라도 Actor Path로 마지막 동률을 고정해 실행 순서 의존성을 없앱니다.
+    return Candidate->GetPathName().Compare(
+        CurrentBest->GetPathName(),
+        ESearchCase::IgnoreCase) < 0;
 }
 
 const TArray<int32>& FAreaGraphService::GetOutgoingConnectionIndices(const AAIAreaBase* Area) const

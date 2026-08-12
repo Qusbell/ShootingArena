@@ -4,13 +4,18 @@
 #include "Components/SceneComponent.h"
 
 #if WITH_EDITOR
+#include "CollisionQueryParams.h"
 #include "Components/StaticMeshComponent.h"
+#include "DrawDebugHelpers.h"
+#include "Engine/World.h"
 #include "Engine/StaticMesh.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "Misc/CoreDelegates.h"
 #include "UObject/ConstructorHelpers.h"
 #endif
+
+DEFINE_LOG_CATEGORY_STATIC(LogAIAreaBase, Log, All);
 
 AAIAreaBase::AAIAreaBase()
 {
@@ -180,6 +185,153 @@ FBox AAIAreaBase::GetAreaBounds() const
 
     // Component Bounds는 회전과 스케일까지 반영된 월드 AABB입니다.
     return AreaBounds->Bounds.GetBox();
+}
+
+void AAIAreaBase::FitAreaToSurroundings()
+{
+#if WITH_EDITOR && WITH_EDITORONLY_DATA
+    // CDO/Blueprint Template 또는 PIE/Game World에서는 레벨 배치용 편집을 수행하지 않습니다.
+    if (IsTemplate() || !IsValid(AreaBounds))
+    {
+        return;
+    }
+
+    UWorld* World = GetWorld();
+    if (!IsValid(World) || World->IsGameWorld())
+    {
+        UE_LOG(LogAIAreaBase, Warning, TEXT("FitAreaToSurroundings는 에디터 월드의 Area 인스턴스에서만 사용할 수 있습니다."));
+        return;
+    }
+
+    const float SafeTraceDistance = FMath::Max(100.0f, AutoFitMaxTraceDistance);
+    const float SafeHeightOffset = FMath::Max(0.0f, AutoFitTraceHeightOffset);
+    const float SafeWallInset = FMath::Max(0.0f, AutoFitWallInset);
+    const float SafeDebugDuration = FMath::Max(0.0f, AutoFitDebugDrawDuration);
+
+    const FTransform BoxTransform = AreaBounds->GetComponentTransform();
+    const FVector OriginalCenter = AreaBounds->GetComponentLocation();
+    const FVector AxisX = BoxTransform.GetUnitAxis(EAxis::X);
+    const FVector AxisY = BoxTransform.GetUnitAxis(EAxis::Y);
+    const FVector AxisZ = BoxTransform.GetUnitAxis(EAxis::Z);
+    const FVector TraceStart = OriginalCenter + AxisZ * SafeHeightOffset;
+    const FVector CurrentWorldExtent = AreaBounds->GetScaledBoxExtent();
+
+    // 플레이 중 Actor나 Trigger가 Auto Fit 크기에 영향을 주지 않도록
+    // 레벨 지오메트리에서 일반적으로 사용하는 WorldStatic/WorldDynamic만 검사합니다.
+    FCollisionObjectQueryParams ObjectQueryParams;
+    ObjectQueryParams.AddObjectTypesToQuery(ECC_WorldStatic);
+    ObjectQueryParams.AddObjectTypesToQuery(ECC_WorldDynamic);
+
+    FCollisionQueryParams QueryParams(
+        TEXT("AIAreaAutoFit"),
+        false,
+        this);
+
+    int32 HitSideCount = 0;
+
+    auto TraceSide = [&](
+        const FVector& Direction,
+        const float CurrentSideDistance) -> float
+    {
+        FHitResult Hit;
+        const FVector TraceEnd = TraceStart + Direction * SafeTraceDistance;
+        const bool bHit = World->LineTraceSingleByObjectType(
+            Hit,
+            TraceStart,
+            TraceEnd,
+            ObjectQueryParams,
+            QueryParams);
+
+        if (bDrawAutoFitTraces)
+        {
+            DrawDebugLine(
+                World,
+                TraceStart,
+                bHit ? Hit.ImpactPoint : TraceEnd,
+                bHit ? FColor::Green : FColor::Red,
+                false,
+                SafeDebugDuration,
+                0,
+                2.0f);
+        }
+
+        if (!bHit)
+        {
+            // 열린 공간처럼 Max Distance 안에서 벽을 못 찾으면 그 방향은 기존 크기를 유지합니다.
+            return CurrentSideDistance;
+        }
+
+        ++HitSideCount;
+
+        const float HitDistance = FVector::Distance(TraceStart, Hit.ImpactPoint);
+
+        // Hit 면을 뚫고 Area가 넘어가지 않도록 벽보다 조금 안쪽에서 멈춥니다.
+        return FMath::Max(1.0f, HitDistance - SafeWallInset);
+    };
+
+    const float PositiveX = TraceSide(AxisX, CurrentWorldExtent.X);
+    const float NegativeX = TraceSide(-AxisX, CurrentWorldExtent.X);
+    const float PositiveY = TraceSide(AxisY, CurrentWorldExtent.Y);
+    const float NegativeY = TraceSide(-AxisY, CurrentWorldExtent.Y);
+
+    if (HitSideCount == 0)
+    {
+        UE_LOG(
+            LogAIAreaBase,
+            Warning,
+            TEXT("[%s] Area Auto Fit: 사방 %0.0fuu 안에서 막는 레벨 지오메트리를 찾지 못해 크기를 변경하지 않았습니다."),
+            *GetName(),
+            SafeTraceDistance);
+        return;
+    }
+
+    /*
+     * +방향과 -방향 거리가 다르면 Box 중심도 함께 이동해야 양쪽 Hit 지점 사이에 정확히 맞습니다.
+     * Actor 자체의 위치는 움직이지 않고 AreaBounds 컴포넌트만 이동하므로
+     * 기획자가 배치한 Actor Pivot/Label은 그대로 유지됩니다.
+     */
+    const FVector NewCenter =
+        OriginalCenter
+        + AxisX * ((PositiveX - NegativeX) * 0.5f)
+        + AxisY * ((PositiveY - NegativeY) * 0.5f);
+
+    const FVector NewWorldExtent(
+        (PositiveX + NegativeX) * 0.5f,
+        (PositiveY + NegativeY) * 0.5f,
+        CurrentWorldExtent.Z);
+
+    const FVector AbsScale = AreaBounds->GetComponentScale().GetAbs();
+    const FVector CurrentUnscaledExtent = AreaBounds->GetUnscaledBoxExtent();
+
+    const FVector NewUnscaledExtent(
+        AbsScale.X > KINDA_SMALL_NUMBER
+            ? NewWorldExtent.X / AbsScale.X
+            : CurrentUnscaledExtent.X,
+        AbsScale.Y > KINDA_SMALL_NUMBER
+            ? NewWorldExtent.Y / AbsScale.Y
+            : CurrentUnscaledExtent.Y,
+        CurrentUnscaledExtent.Z);
+
+    // 저장과 Undo 시스템이 변경된 Actor/Component를 추적할 수 있도록 수정 상태를 기록합니다.
+    Modify();
+    AreaBounds->Modify();
+
+    AreaBounds->SetWorldLocation(NewCenter);
+    AreaBounds->SetBoxExtent(NewUnscaledExtent, false);
+
+    UpdateAreaDebugPreview();
+    MarkPackageDirty();
+
+    UE_LOG(
+        LogAIAreaBase,
+        Log,
+        TEXT("[%s] Area Auto Fit 완료: HitSides=%d, WorldExtent=(%.1f, %.1f, %.1f)"),
+        *GetName(),
+        HitSideCount,
+        NewWorldExtent.X,
+        NewWorldExtent.Y,
+        NewWorldExtent.Z);
+#endif
 }
 
 #if WITH_EDITOR
