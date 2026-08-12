@@ -74,8 +74,14 @@ private:
     void AddDirectedConnection(const FAreaDirectedConnection& Connection);
     void RebuildAdjacency();
 
+    /** Area 내부 포함 여부만 검사합니다. 일반 런타임 판정의 nearest fallback과 분리해 Link Endpoint 제한 거리를 보장합니다. */
+    AAIAreaBase* FindContainingAreaByPosition(const FVector& WorldPosition) const;
+
     /** Endpoint가 Area 경계에서 조금 벗어났을 때 지정 거리 안의 가장 가까운 Area를 찾습니다. */
     AAIAreaBase* FindAreaByPositionOrNearest(const FVector& WorldPosition, float MaxDistance) const;
+
+    /** 거리 동률 시 더 작은 Area, 크기도 같으면 AreaId/Path 순으로 고정 선택합니다. */
+    static bool IsAreaPreferredOnTie(const AAIAreaBase* Candidate, const AAIAreaBase* CurrentBest);
 
     static uint32 MakeDirectedPairHash(const AAIAreaBase* FromArea, const AAIAreaBase* ToArea);
     static float ComputeBoundsGapXY(const FBox& A, const FBox& B);
@@ -135,4 +141,10 @@ private:
     TMap<uint64, FAreaBakedTransitionDistance> TransitionDistanceCache;
     TMap<const AAIAreaBase*, TArray<FVector>> RetreatPointsByArea;
     bool bHasBakedRuntimeCaches = false;
+
+    /** 일반 위치 판정에서 Area 밖의 작은 틈을 보완하는 최대 거리입니다. */
+    float NearestAreaFallbackMaxDistance = 0.0f;
+
+    /** nearest 거리 동률 판정 허용 오차입니다. */
+    float NearestAreaDistanceTieTolerance = 1.0f;
 };

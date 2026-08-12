@@ -49,6 +49,8 @@ public:
     float GetAutoNormalMaxPathDetourRatio() const { return AutoNormalMaxPathDetourRatio; }
     float GetAutoNormalMaxPathExtraDistance() const { return AutoNormalMaxPathExtraDistance; }
     float GetDebugDrawDuration() const { return DebugDrawDuration; }
+    float GetNearestAreaFallbackMaxDistance() const { return NearestAreaFallbackMaxDistance; }
+    float GetNearestAreaDistanceTieTolerance() const { return NearestAreaDistanceTieTolerance; }
     UAreaRiskConfigDataAsset* GetRiskConfig() const { return RiskConfig; }
 
 protected:
@@ -99,6 +101,22 @@ protected:
     UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "AI|Area|Graph",
         meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "1000.0"))
     float AutoNormalMaxPathExtraDistance = 300.0f;
+
+    /**
+     * 위치가 어느 Area 안에도 없을 때 가장 가까운 Area를 대신 사용할 최대 거리입니다.
+     * 0이면 Fallback을 사용하지 않습니다. Area 내부 판정은 항상 이 값보다 우선합니다.
+     */
+    UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "AI|Area|Position Resolve",
+        meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "2000.0"))
+    float NearestAreaFallbackMaxDistance = 300.0f;
+
+    /**
+     * 가장 가까운 Area 두 개의 거리 차이가 이 값 이하면 동률로 취급합니다.
+     * 동률이면 더 작은 Area, 크기도 같으면 Area Name 순서로 결정합니다.
+     */
+    UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "AI|Area|Position Resolve",
+        meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "50.0"))
+    float NearestAreaDistanceTieTolerance = 1.0f;
 
     /**
      * PPT의 DA_Area_Risk에 해당하는 공통 점수 설정입니다.
