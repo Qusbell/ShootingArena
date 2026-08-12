@@ -44,6 +44,14 @@ AAIAreaBase::AAIAreaBase()
     AreaDebugPreview->SetCanEverAffectNavigation(false);
     AreaDebugPreview->SetCastShadow(false);
     AreaDebugPreview->SetReceivesDecals(false);
+
+    /*
+     * Area Preview는 반투명 디버그 표시용이므로 Nanite를 사용하지 않습니다.
+     * Translucent Material + Nanite 조합에서 발생하는 경고를 막고,
+     * 실제 Area 판정/경로/충돌 로직에는 영향을 주지 않습니다.
+     */
+    AreaDebugPreview->bDisallowNanite = true;
+
     AreaDebugPreview->SetHiddenInGame(true);
     AreaDebugPreview->SetVisibility(true);
 
@@ -178,6 +186,19 @@ FBox AAIAreaBase::GetAreaBounds() const
 void AAIAreaBase::UpdateAreaDebugPreview()
 {
 #if WITH_EDITORONLY_DATA
+    /*
+     * CDO(Default__...)와 Blueprint Archetype/Template에서는 MID를 생성하지 않습니다.
+     * Template이 임시 UMaterialInstanceDynamic을 참조하면 패키지 저장 시
+     * "Illegal reference to private object"가 발생할 수 있습니다.
+     *
+     * 맵에 실제로 배치된 Area 인스턴스만 아래 Preview MID를 생성합니다.
+     */
+    if (IsTemplate())
+    {
+        AreaDebugMID = nullptr;
+        return;
+    }
+
     if (!IsValid(AreaBounds) || !IsValid(AreaDebugPreview))
     {
         return;
