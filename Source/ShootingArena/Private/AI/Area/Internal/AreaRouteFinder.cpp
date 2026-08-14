@@ -50,6 +50,41 @@ namespace AreaRouteFinderPrivate
     }
 
     /**
+     * 현재 탐색 Branch의 Parent Chain 안에 같은 Area가 이미 포함되어 있는지 확인합니다.
+     * Connection별 Search State 구조는 유지하면서, A -> B -> A처럼 한 Route 안에서
+     * 동일 Area를 다시 방문하는 순환 경로만 차단하기 위한 검사입니다.
+     */
+    static bool IsAreaInCurrentPath(
+        const TArray<FSearchState>& States,
+        const int32 CurrentStateId,
+        const AAIAreaBase* AreaToCheck)
+    {
+        if (!IsValid(AreaToCheck))
+        {
+            return false;
+        }
+
+        int32 TraceStateId = CurrentStateId;
+
+        // Parent 정보가 비정상적으로 순환하더라도 무한 루프가 생기지 않도록
+        // 최대 State 개수만큼만 역추적합니다.
+        for (int32 Guard = 0;
+             Guard < States.Num() && States.IsValidIndex(TraceStateId);
+             ++Guard)
+        {
+            const FSearchState& TraceState = States[TraceStateId];
+            if (TraceState.Area.Get() == AreaToCheck)
+            {
+                return true;
+            }
+
+            TraceStateId = TraceState.ParentStateId;
+        }
+
+        return false;
+    }
+
+    /**
      * 런타임 Area 판단에서는 NavigationSystem을 호출하지 않습니다.
      * 고정된 연결 사이 구간은 에디터에서 저장한 Nav 거리 캐시를 사용하고,
      * 실제 AI 시작점처럼 미리 고정할 수 없는 첫 구간만 직선거리로 추정합니다.
@@ -285,6 +320,16 @@ bool FAreaRouteFinder::FindRouteInternal(
                 || !Connection.FromArea.IsValid()
                 || !Connection.ToArea.IsValid()
                 || !Request.TraversalCapabilities.Supports(Connection.TraversalType))
+            {
+                continue;
+            }
+
+            // 현재 Route에서 이미 지나온 Area로 다시 들어가는 Connection은 제외합니다.
+            // 예: bridge3 -> bridge12 -> bridge3 같은 Area 순환을 Route 결과에 넣지 않습니다.
+            if (IsAreaInCurrentPath(
+                States,
+                CurrentStateId,
+                Connection.ToArea.Get()))
             {
                 continue;
             }
