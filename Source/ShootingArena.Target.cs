@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+ï»¿// Fill out your copyright notice in the Description page of Project Settings.
 
 using UnrealBuildTool;
 using System.Collections.Generic;
@@ -9,7 +9,7 @@ public class ShootingArenaTarget : TargetRules
 	{
 		Type = TargetType.Game;
 		DefaultBuildSettings = BuildSettingsVersion.V5;
-        WindowsPlatform.CompilerVersion = "14.38.33130"; // Ä¿½ºÅÒ µ¥µğÄÉÀÌÆ® Àü¿ë ¿£Áø°ú °°Àº vs ¹öÀü »ç¿ë
+        WindowsPlatform.CompilerVersion = "14.38.33130"; // ì»¤ìŠ¤í…€ ë°ë””ì¼€ì´íŠ¸ ì „ìš© ì—”ì§„ê³¼ ê°™ì€ vs ë²„ì „ ì‚¬ìš©
 
         ExtraModuleNames.AddRange( new string[] { "ShootingArena" } );
 	}
