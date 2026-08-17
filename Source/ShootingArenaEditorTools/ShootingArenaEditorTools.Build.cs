@@ -2,7 +2,8 @@
 
 public class ShootingArenaEditorTools : ModuleRules
 {
-    public ShootingArenaEditorTools( ReadOnlyTargetRules Target ) : base( Target )
+    public ShootingArenaEditorTools( ReadOnlyTargetRules Target )
+        : base( Target )
     {
         PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
@@ -12,8 +13,8 @@ public class ShootingArenaEditorTools : ModuleRules
                 "Core",
                 "CoreUObject",
                 "Engine",
-                "AssetRegistry",
-                "UnrealEd"
+                "UnrealEd",
+                "AssetRegistry"
             }
         );
     }
