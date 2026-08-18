@@ -136,3 +136,60 @@ bool UCustomWrapperLibrary::GetActiveBehaviorTreeNode(
 
 	return true;
 }
+
+bool UCustomWrapperLibrary::GetBehaviorTreeDebugInfo(
+	AActor* TargetActor,
+	FString& OutBehaviorTreeName,
+	FString& OutActiveNodeName,
+	FString& OutActiveTasks)
+{
+	OutBehaviorTreeName.Reset();
+	OutActiveNodeName.Reset();
+	OutActiveTasks.Reset();
+
+	if (!TargetActor)
+	{
+		return false;
+	}
+
+	AAIController* AIController = Cast<AAIController>(TargetActor);
+
+	if (!AIController)
+	{
+		if (APawn* Pawn = Cast<APawn>(TargetActor))
+		{
+			AIController = Cast<AAIController>(Pawn->GetController());
+		}
+	}
+
+	if (!AIController)
+	{
+		return false;
+	}
+
+	UBehaviorTreeComponent* BTComponent =
+		Cast<UBehaviorTreeComponent>(AIController->GetBrainComponent());
+
+	if (!BTComponent)
+	{
+		return false;
+	}
+
+	// 현재 Behavior Tree
+	if (UBehaviorTree* CurrentTree = BTComponent->GetCurrentTree())
+	{
+		OutBehaviorTreeName = CurrentTree->GetName();
+	}
+
+	// 일반적인 현재 Active Node
+	if (const UBTNode* ActiveNode = BTComponent->GetActiveNode())
+	{
+		OutActiveNodeName = ActiveNode->GetNodeName();
+	}
+
+	// 현재 실행 중인 Task들.
+	// Parallel Task가 있다면 그것까지 포함된 디버그 정보를 얻는 용도.
+	OutActiveTasks = BTComponent->DescribeActiveTasks();
+
+	return true;
+}

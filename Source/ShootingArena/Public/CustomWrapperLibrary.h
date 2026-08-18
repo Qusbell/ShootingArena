@@ -69,4 +69,12 @@ public:
 		FString& OutActiveNodeName
 	);
 
+	UFUNCTION(BlueprintPure, Category = "AI|BehaviorTree", meta = (Keywords = "BehaviorTree BT Active Tasks Parallel Current Debug AI"))
+	static bool GetBehaviorTreeDebugInfo(
+		AActor* TargetActor,
+		FString& OutBehaviorTreeName,
+		FString& OutActiveNodeName,
+		FString& OutActiveTasks
+	);
+
 };
