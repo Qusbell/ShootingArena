@@ -1,10 +1,17 @@
-
+ï»¿
 
 #include "CustomWrapperLibrary.h"
 
 #include "NavigationSystem.h"
 #include "Engine/World.h"
 #include "Engine/Engine.h"
+
+#include "AIController.h"
+#include "GameFramework/Pawn.h"
+
+#include "BehaviorTree/BehaviorTree.h"
+#include "BehaviorTree/BehaviorTreeComponent.h"
+#include "BehaviorTree/BTNode.h"
 
 
 ENavPathTestResult UCustomWrapperLibrary::TestPathExistsSync(
@@ -14,58 +21,118 @@ ENavPathTestResult UCustomWrapperLibrary::TestPathExistsSync(
 	ANavigationData* NavData,
 	TSubclassOf<UNavigationQueryFilter> FilterClass)
 {
-	// Context Object À¯È¿¼º °Ë»ç
+	// Context Object ìœ íš¨ì„± ê²€ì‚¬
 	if (!WorldContextObject)
 	{
-		UE_LOG(LogNavigation, Warning, TEXT("TestPathExistsSync: WorldContextObject°¡ À¯È¿ÇÏÁö ¾Ê½À´Ï´Ù."));
+		UE_LOG(LogNavigation, Warning, TEXT("TestPathExistsSync: WorldContextObjectê°€ ìœ íš¨í•˜ì§€ ì•ŠìŠµë‹ˆë‹¤."));
 		return ENavPathTestResult::OffMesh;
 	}
 
-	// World ÀÎ½ºÅÏ½º È¹µæ
+	// World ì¸ìŠ¤í„´ìŠ¤ íšë“
 	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
 	if (!World)
 	{
 		return ENavPathTestResult::OffMesh;
 	}
 
-	// Navigation System È¹µæ
+	// Navigation System íšë“
 	UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
 	if (!NavSys)
 	{
-		UE_LOG(LogNavigation, Warning, TEXT("TestPathExistsSync: NavigationSystemV1À» Ã£À» ¼ö ¾ø½À´Ï´Ù."));
+		UE_LOG(LogNavigation, Warning, TEXT("TestPathExistsSync: NavigationSystemV1ì„ ì°¾ì„ ìˆ˜ ì—†ìŠµë‹ˆë‹¤."));
 		return ENavPathTestResult::OffMesh;
 	}
 
-	// ´ë»ó Navigation Data ÁöÁ¤ (Àü´Ş¹ŞÀº NavData°¡ ¾øÀ¸¸é ±âº» ¸ŞÀÎ NavMesh »ç¿ë)
+	// ëŒ€ìƒ Navigation Data ì§€ì • (ì „ë‹¬ë°›ì€ NavDataê°€ ì—†ìœ¼ë©´ ê¸°ë³¸ ë©”ì¸ NavMesh ì‚¬ìš©)
 	ANavigationData* TargetNavData = NavData ? NavData : NavSys->GetDefaultNavDataInstance(FNavigationSystem::DontCreate);
 	if (!TargetNavData)
 	{
-		UE_LOG(LogNavigation, Verbose, TEXT("TestPathExistsSync: À¯È¿ÇÑ NavigationData°¡ È°¼ºÈ­µÇ¾î ÀÖÁö ¾Ê½À´Ï´Ù."));
+		UE_LOG(LogNavigation, Verbose, TEXT("TestPathExistsSync: ìœ íš¨í•œ NavigationDataê°€ í™œì„±í™”ë˜ì–´ ìˆì§€ ì•ŠìŠµë‹ˆë‹¤."));
 		return ENavPathTestResult::OffMesh;
 	}
 
-	// PathStart ¶Ç´Â PathEnd°¡ NavMesh À§¿¡ Á¸ÀçÇÏ´ÂÁö °Ë»ç
+	// PathStart ë˜ëŠ” PathEndê°€ NavMesh ìœ„ì— ì¡´ì¬í•˜ëŠ”ì§€ ê²€ì‚¬
 	const FVector Extent = TargetNavData->GetDefaultQueryExtent();
 	FNavLocation NavStart, NavEnd;
 
 	const bool bStartOnMesh = TargetNavData->ProjectPoint(PathStart, NavStart, Extent);
 	const bool bEndOnMesh = TargetNavData->ProjectPoint(PathEnd, NavEnd, Extent);
 
-	// ½ÃÀÛÁ¡ ¶Ç´Â ¸ñÀûÁö Áß ÇÏ³ª¶óµµ Mesh À§¿¡ Á¸ÀçÇÏÁö ¾ÊÀ¸¸é OffMesh ¹İÈ¯
+	// ì‹œì‘ì  ë˜ëŠ” ëª©ì ì§€ ì¤‘ í•˜ë‚˜ë¼ë„ Mesh ìœ„ì— ì¡´ì¬í•˜ì§€ ì•Šìœ¼ë©´ OffMesh ë°˜í™˜
 	if (!bStartOnMesh || !bEndOnMesh)
 	{
 		return ENavPathTestResult::OffMesh;
 	}
 
-	// Filter ÁöÁ¤
+	// Filter ì§€ì •
 	FSharedConstNavQueryFilter QueryFilter = UNavigationQueryFilter::GetQueryFilter(*TargetNavData, WorldContextObject, FilterClass);
 
-	// FPathFindingQuery ±¸Á¶Ã¼ »ı¼º
+	// FPathFindingQuery êµ¬ì¡°ì²´ ìƒì„±
 	FPathFindingQuery Query(WorldContextObject, *TargetNavData, PathStart, PathEnd, QueryFilter);
 
-	// TestPathSync È£Ãâ (°æ·Î °´Ã¼¸¦ ÇÒ´çÇÏÁö ¾Ê°í Island ÆÇÁ¤¸¸ ºü¸£°Ô ¼öÇà)
+	// TestPathSync í˜¸ì¶œ (ê²½ë¡œ ê°ì²´ë¥¼ í• ë‹¹í•˜ì§€ ì•Šê³  Island íŒì •ë§Œ ë¹ ë¥´ê²Œ ìˆ˜í–‰)
 	const bool bPathExists = NavSys->TestPathSync(Query, EPathFindingMode::Hierarchical);
 
-	// °æ·Î°¡ ¿¬°áµÇ¾î ÀÖÀ¸¸é PathExists, °Å¸®°¡ ³Ê¹« ¸Ö°Å³ª ´ÜÀıµÇ¾î ÀÖÀ¸¸é Islands ¹İÈ¯
+	// ê²½ë¡œê°€ ì—°ê²°ë˜ì–´ ìˆìœ¼ë©´ PathExists, ê±°ë¦¬ê°€ ë„ˆë¬´ ë©€ê±°ë‚˜ ë‹¨ì ˆë˜ì–´ ìˆìœ¼ë©´ Islands ë°˜í™˜
 	return bPathExists ? ENavPathTestResult::PathExists : ENavPathTestResult::Islands;
+}
+
+
+bool UCustomWrapperLibrary::GetActiveBehaviorTreeNode(
+	AActor* TargetActor,
+	FString& OutBehaviorTreeName,
+	FString& OutActiveNodeName)
+{
+	OutBehaviorTreeName.Reset();
+	OutActiveNodeName.Reset();
+
+	if (!TargetActor)
+	{
+		return false;
+	}
+
+	// TargetActorê°€ AIController ìì²´ì¸ ê²½ìš°
+	AAIController* AIController = Cast<AAIController>(TargetActor);
+
+	// TargetActorê°€ Pawnì¸ ê²½ìš° í•´ë‹¹ Pawnì˜ Controllerë¥¼ ê°€ì ¸ì˜´
+	if (!AIController)
+	{
+		if (APawn* Pawn = Cast<APawn>(TargetActor))
+		{
+			AIController = Cast<AAIController>(Pawn->GetController());
+		}
+	}
+
+	if (!AIController)
+	{
+		return false;
+	}
+
+	// AIControllerê°€ í˜„ì¬ ì‚¬ìš©í•˜ê³  ìˆëŠ” BrainComponentê°€
+	// BehaviorTreeComponentì¸ì§€ í™•ì¸
+	UBehaviorTreeComponent* BTComponent =
+		Cast<UBehaviorTreeComponent>(AIController->GetBrainComponent());
+
+	if (!BTComponent)
+	{
+		return false;
+	}
+
+	// í˜„ì¬ ì‹¤í–‰ ì¤‘ì¸ Behavior Tree
+	if (UBehaviorTree* CurrentTree = BTComponent->GetCurrentTree())
+	{
+		OutBehaviorTreeName = CurrentTree->GetName();
+	}
+
+	// í˜„ì¬ Active Node
+	const UBTNode* ActiveNode = BTComponent->GetActiveNode();
+
+	if (!ActiveNode)
+	{
+		return false;
+	}
+
+	OutActiveNodeName = ActiveNode->GetNodeName();
+
+	return true;
 }

@@ -1,4 +1,4 @@
-
+ï»¿
 #pragma once
 
 #include "CoreMinimal.h"
@@ -24,7 +24,7 @@ enum class ENavPathTestResult : uint8
 
 
 /**
- * cpp¿¡¸¸ Á¸ÀçÇÏ´Â ±â´ÉµéÀ» BP¿¡¼­µµ »ç¿ëÇÒ ¼ö ÀÖµµ·Ï ·¡ÇÎÇÏ´Â ¶óÀÌºê·¯¸®
+ * cppì—ë§Œ ì¡´ì¬í•˜ëŠ” ê¸°ëŠ¥ë“¤ì„ BPì—ì„œë„ ì‚¬ìš©í•  ìˆ˜ ìˆë„ë¡ ë˜í•‘í•˜ëŠ” ë¼ì´ë¸ŒëŸ¬ë¦¬
  */
 UCLASS()
 class SHOOTINGARENA_API UCustomWrapperLibrary : public UBlueprintFunctionLibrary
@@ -34,15 +34,15 @@ class SHOOTINGARENA_API UCustomWrapperLibrary : public UBlueprintFunctionLibrary
 public:
 
 	/**
-	* ½ÃÀÛ ÁöÁ¡°ú ¸ñÀûÁö »çÀÌ¿¡ À¯È¿ÇÑ ³×ºñ°ÔÀÌ¼Ç °æ·Î°¡ Á¸ÀçÇÏ´ÂÁö µ¿±â½Ä(Sync)À¸·Î ºü¸£°Ô °Ë»çÇÕ´Ï´Ù.
-	* °æ·Î °´Ã¼¸¦ »ı¼ºÇÏÁö ¾ÊÀ¸¹Ç·Î FindPathº¸´Ù ¿¬»ê ºñ¿ëÀÌ ¸Å¿ì Àû½À´Ï´Ù.
+	* ì‹œì‘ ì§€ì ê³¼ ëª©ì ì§€ ì‚¬ì´ì— ìœ íš¨í•œ ë„¤ë¹„ê²Œì´ì…˜ ê²½ë¡œê°€ ì¡´ì¬í•˜ëŠ”ì§€ ë™ê¸°ì‹(Sync)ìœ¼ë¡œ ë¹ ë¥´ê²Œ ê²€ì‚¬í•©ë‹ˆë‹¤.
+	* ê²½ë¡œ ê°ì²´ë¥¼ ìƒì„±í•˜ì§€ ì•Šìœ¼ë¯€ë¡œ FindPathë³´ë‹¤ ì—°ì‚° ë¹„ìš©ì´ ë§¤ìš° ì ìŠµë‹ˆë‹¤.
 	*
-	* @param WorldContextObject ¿ùµå ÄÁÅØ½ºÆ®¸¦ °¡Á®¿À±â À§ÇÑ °´Ã¼ (ºí·çÇÁ¸°Æ®¿¡¼­ Self ÁöÁ¤)
-	* @param PathStart °æ·Î Å½»ö ½ÃÀÛ À§Ä¡ (World Space)
-	* @param PathEnd °æ·Î Å½»ö ¸ñÀûÁö À§Ä¡ (World Space)
-	* @param NavData Æ¯Á¤ NavMesh Data ÁöÁ¤ (nullptr ÁöÁ¤ ½Ã ±âº» NavMesh »ç¿ë)
-	* @param FilterClass Ä¿½ºÅÒ Navigation Query Filter Å¬·¡½º (¼±ÅÃ »çÇ×)
-	* @return °æ·Î°¡ Á¸ÀçÇÏ°í ¸·ÇôÀÖÁö ¾Ê´Ù¸é true, °æ·Î°¡ ¾ø°Å³ª ¸·Çû´Ù¸é false ¹İÈ¯
+	* @param WorldContextObject ì›”ë“œ ì»¨í…ìŠ¤íŠ¸ë¥¼ ê°€ì ¸ì˜¤ê¸° ìœ„í•œ ê°ì²´ (ë¸”ë£¨í”„ë¦°íŠ¸ì—ì„œ Self ì§€ì •)
+	* @param PathStart ê²½ë¡œ íƒìƒ‰ ì‹œì‘ ìœ„ì¹˜ (World Space)
+	* @param PathEnd ê²½ë¡œ íƒìƒ‰ ëª©ì ì§€ ìœ„ì¹˜ (World Space)
+	* @param NavData íŠ¹ì • NavMesh Data ì§€ì • (nullptr ì§€ì • ì‹œ ê¸°ë³¸ NavMesh ì‚¬ìš©)
+	* @param FilterClass ì»¤ìŠ¤í…€ Navigation Query Filter í´ë˜ìŠ¤ (ì„ íƒ ì‚¬í•­)
+	* @return ê²½ë¡œê°€ ì¡´ì¬í•˜ê³  ë§‰í˜€ìˆì§€ ì•Šë‹¤ë©´ true, ê²½ë¡œê°€ ì—†ê±°ë‚˜ ë§‰í˜”ë‹¤ë©´ false ë°˜í™˜
 	*/
 	UFUNCTION(BlueprintCallable, Category = "AI|Navigation", meta = (WorldContext = "WorldContextObject", Keywords = "TestPath PathExists CanNavigate NavMesh Navigation"))
 	static ENavPathTestResult TestPathExistsSync(
@@ -51,6 +51,22 @@ public:
 		FVector PathEnd,
 		ANavigationData* NavData = nullptr,
 		TSubclassOf<UNavigationQueryFilter> FilterClass = nullptr
+	);
+
+	/**
+    * AIController ë˜ëŠ” AI Pawnì´ í˜„ì¬ ì‹¤í–‰ ì¤‘ì¸ Behavior Treeì˜
+    * Active Node ì´ë¦„ì„ ë°˜í™˜í•©ë‹ˆë‹¤.
+    *
+    * @param TargetActor AIController ë˜ëŠ” AIControllerê°€ ì†Œìœ í•œ Pawn
+    * @param OutBehaviorTreeName í˜„ì¬ ì‹¤í–‰ ì¤‘ì¸ Behavior Tree ì´ë¦„
+    * @param OutActiveNodeName í˜„ì¬ Active Node ì´ë¦„
+    * @return ìœ íš¨í•œ BehaviorTreeComponentì™€ Active Nodeë¥¼ ì°¾ì•˜ìœ¼ë©´ true
+    */
+	UFUNCTION(BlueprintPure, Category = "AI|BehaviorTree", meta = (Keywords = "BehaviorTree BT Active Node Current Debug AI"))
+	static bool GetActiveBehaviorTreeNode(
+		AActor* TargetActor,
+		FString& OutBehaviorTreeName,
+		FString& OutActiveNodeName
 	);
 
 };
