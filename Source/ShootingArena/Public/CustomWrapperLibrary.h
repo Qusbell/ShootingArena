@@ -77,4 +77,10 @@ public:
 		FString& OutActiveTasks
 	);
 
+	UFUNCTION(BlueprintPure, Category = "AI|BehaviorTree", meta = (Keywords = "BehaviorTree BT Active Node Path Current Debug AI"))
+	static bool GetActiveBehaviorTreePath(
+		AActor* TargetActor,
+		TArray<FString>& OutNodePath
+	);
+
 };

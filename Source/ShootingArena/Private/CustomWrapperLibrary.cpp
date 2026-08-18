@@ -13,6 +13,8 @@
 #include "BehaviorTree/BehaviorTreeComponent.h"
 #include "BehaviorTree/BTNode.h"
 
+#include "Algo/Reverse.h"
+
 
 ENavPathTestResult UCustomWrapperLibrary::TestPathExistsSync(
 	UObject* WorldContextObject,
@@ -192,4 +194,59 @@ bool UCustomWrapperLibrary::GetBehaviorTreeDebugInfo(
 	OutActiveTasks = BTComponent->DescribeActiveTasks();
 
 	return true;
+}
+
+bool UCustomWrapperLibrary::GetActiveBehaviorTreePath(
+	AActor* TargetActor,
+	TArray<FString>& OutNodePath)
+{
+	OutNodePath.Reset();
+
+	if (!TargetActor)
+	{
+		return false;
+	}
+
+	AAIController* AIController = Cast<AAIController>(TargetActor);
+
+	if (!AIController)
+	{
+		if (APawn* Pawn = Cast<APawn>(TargetActor))
+		{
+			AIController = Cast<AAIController>(Pawn->GetController());
+		}
+	}
+
+	if (!AIController)
+	{
+		return false;
+	}
+
+	UBehaviorTreeComponent* BTComponent =
+		Cast<UBehaviorTreeComponent>(AIController->GetBrainComponent());
+
+	if (!BTComponent)
+	{
+		return false;
+	}
+
+	const UBTNode* CurrentNode = BTComponent->GetActiveNode();
+
+	if (!CurrentNode)
+	{
+		return false;
+	}
+
+	// Leaf -> Root 방향으로 수집
+	while (CurrentNode)
+	{
+		OutNodePath.Add(CurrentNode->GetNodeName());
+
+		CurrentNode = CurrentNode->GetParentNode();
+	}
+
+	// Root -> Leaf 순서로 변경
+	Algo::Reverse(OutNodePath);
+
+	return OutNodePath.Num() > 0;
 }
