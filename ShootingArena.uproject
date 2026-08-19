@@ -12,7 +12,12 @@
 				"Engine",
 				"AIModule"
 			]
-		}
+		},
+		{
+		        "Name": "ShootingArenaEditorTools",
+		        "Type": "Editor",
+		        "LoadingPhase": "Default"
+    		}
 	],
 	"Plugins": [
 		{
