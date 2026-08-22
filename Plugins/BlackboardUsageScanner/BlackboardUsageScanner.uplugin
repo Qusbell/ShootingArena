@@ -1,0 +1,18 @@
+{
+  "FileVersion": 3,
+  "Version": 1,
+  "VersionName": "0.1.0",
+  "FriendlyName": "Blackboard Usage Scanner",
+  "Description": "Editor-only exact FBlackboardKeySelector usage scanner for Behavior Trees.",
+  "Category": "AI",
+  "CreatedBy": "OpenAI",
+  "CanContainContent": false,
+  "IsBetaVersion": true,
+  "Modules": [
+    {
+      "Name": "BlackboardUsageScanner",
+      "Type": "Editor",
+      "LoadingPhase": "Default"
+    }
+  ]
+}
