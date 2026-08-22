@@ -1,38 +1,47 @@
-Blackboard Usage Scanner - UE 5.6 MVP
+Blackboard Usage Scanner - UE 5.6 v0.2.1
 
-INSTALL
-1. Copy the BlackboardUsageScanner folder into:
-   <YourProject>/Plugins/BlackboardUsageScanner/
-2. Regenerate/rebuild the project for Unreal Engine 5.6.
-3. Enable the plugin if it is not enabled automatically.
-4. Open the Editor console and run:
-   BB.ScanUsage
+WHY 0.2.1
+v0.2 referenced UK2Node_CallFunction directly. On some UE 5.6 installed builds,
+that compiles but fails to link because UK2Node_CallFunction is MinimalAPI.
+
+v0.2.1 removes the BlueprintGraph dependency and does not directly reference
+UK2Node_CallFunction at all. Raw Blackboard calls are recognized via generic
+UEdGraphNode pin signatures:
+- input pin "KeyName"
+- input pin "self"
+- self pin object type is UBlackboardComponent or subclass
+
+UPDATE
+1. Close Unreal Editor.
+2. Replace:
+   <Project>/Plugins/BlackboardUsageScanner/
+   with the folder in this package.
+3. Build ShootingArenaEditor / Development Editor / Win64.
+4. Start Editor.
+
+COMMAND FOR CURRENT REFACTOR
+    BB.ScanUsage BB_QuakeBoard
 
 OUTPUT
-<Project>/Saved/BlackboardUsageScanner/BlackboardKeySummary.csv
-<Project>/Saved/BlackboardUsageScanner/BlackboardKeyReferences.csv
+<Project>/Saved/BlackboardUsageScanner/BB_QuakeBoard/
+    BlackboardKeySummary.csv
+    BlackboardKeyReferences.csv
+    BlackboardRawReferences.csv
+    BlackboardDynamicKeyAccess.csv
 
-SCOPE
-- Scans assets under /Game only.
-- Enumerates local keys defined by every UBlackboardData under /Game.
-- Traverses Behavior Trees, including:
-  - Root decorators
-  - Composite nodes
-  - Composite services
-  - Child decorators
-  - Tasks
-  - Task services
-- Recursively scans reflected properties for FBlackboardKeySelector,
-  including selectors nested in USTRUCTs and TArrays.
-- Resolves inherited keys to the Blackboard asset that actually defines
-  the key.
-- Records exact count + BT/node/property location.
-- Reports stale selector names as UNRESOLVED_KEY.
+RAW STATIC CASES
+- Direct KeyName literal
+- One-hop Name producer with an unlinked "Value" input
+- One-hop String->Name producer with an unlinked "InString" input
 
-IMPORTANT MVP LIMITATION
-NO_EXACT_REF does NOT mean the key is unused.
-This MVP does NOT yet scan:
-- UBlackboardComponent raw FName/FString calls in Blueprint graphs
-- literal Name/String pins
-- dynamic key-name data flow
-- TMap/TSet containers containing FBlackboardKeySelector
+DYNAMIC CASES
+Any connected KeyName input that cannot be resolved in one hop is written to:
+    BlackboardDynamicKeyAccess.csv
+
+STATUS
+HAS_EXACT_REF : FBlackboardKeySelector reference exists
+RAW_ONLY      : no exact reference, raw KeyName literal candidate exists
+NO_STATIC_REF : neither supported exact nor raw static reference found
+
+NO_STATIC_REF IS NOT PROOF OF UNUSED.
+Review dynamic accesses before deleting or renaming a key.

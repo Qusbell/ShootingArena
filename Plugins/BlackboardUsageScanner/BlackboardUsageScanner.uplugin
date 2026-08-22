@@ -1,9 +1,9 @@
 {
   "FileVersion": 3,
-  "Version": 1,
-  "VersionName": "0.1.0",
+  "Version": 3,
+  "VersionName": "0.2.1",
   "FriendlyName": "Blackboard Usage Scanner",
-  "Description": "Editor-only exact FBlackboardKeySelector usage scanner for Behavior Trees.",
+  "Description": "Editor-only Blackboard exact selector and Blueprint raw KeyName scanner.",
   "Category": "AI",
   "CreatedBy": "OpenAI",
   "CanContainContent": false,

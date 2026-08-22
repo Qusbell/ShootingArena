@@ -10,8 +10,12 @@ public:
     {
         ScanCommand = IConsoleManager::Get().RegisterConsoleCommand(
             TEXT("BB.ScanUsage"),
-            TEXT("Scan /Game Behavior Trees for exact FBlackboardKeySelector usages and export CSV reports."),
-            FConsoleCommandDelegate::CreateStatic(&FBlackboardUsageScanner::Run),
+            TEXT(
+                "Scan Blackboard usage. "
+                "Optional argument filters Blackboard asset name/path. "
+                "Example: BB.ScanUsage BB_QuakeBoard"),
+            FConsoleCommandWithArgsDelegate::CreateStatic(
+                &FBlackboardUsageScanner::Run),
             ECVF_Default);
     }
 
