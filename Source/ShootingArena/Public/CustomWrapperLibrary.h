@@ -36,6 +36,7 @@ public:
 	/**
 	* 시작 지점과 목적지 사이에 유효한 네비게이션 경로가 존재하는지 동기식(Sync)으로 빠르게 검사합니다.
 	* 경로 객체를 생성하지 않으므로 FindPath보다 연산 비용이 매우 적습니다.
+	* 현재 Hierarchical을 기반으로 구현되고 있으므로, FilterClass는 실질적으로 무시되고 있습니다.
 	*
 	* @param WorldContextObject 월드 컨텍스트를 가져오기 위한 객체 (블루프린트에서 Self 지정)
 	* @param PathStart 경로 탐색 시작 위치 (World Space)

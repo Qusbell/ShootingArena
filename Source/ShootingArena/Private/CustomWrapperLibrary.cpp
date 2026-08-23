@@ -70,7 +70,10 @@ ENavPathTestResult UCustomWrapperLibrary::TestPathExistsSync(
 	FSharedConstNavQueryFilter QueryFilter = UNavigationQueryFilter::GetQueryFilter(*TargetNavData, WorldContextObject, FilterClass);
 
 	// FPathFindingQuery 구조체 생성
-	FPathFindingQuery Query(WorldContextObject, *TargetNavData, PathStart, PathEnd, QueryFilter);
+	FPathFindingQuery Query(WorldContextObject, *TargetNavData, NavStart.Location, NavEnd.Location, QueryFilter);
+
+	Query.SetAllowPartialPaths(false);
+	Query.SetRequireNavigableEndLocation(true);
 
 	// TestPathSync 호출 (경로 객체를 할당하지 않고 Island 판정만 빠르게 수행)
 	const bool bPathExists = NavSys->TestPathSync(Query, EPathFindingMode::Hierarchical);
