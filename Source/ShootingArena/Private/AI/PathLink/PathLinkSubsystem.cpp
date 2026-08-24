@@ -1,4 +1,4 @@
-#include "AI/PathLink/PathLinkSubsystem.h"
+﻿#include "AI/PathLink/PathLinkSubsystem.h"
 
 #include "AI/PathLink/PathLink.h"
 #include "AI/PathLink/Internal/PathLinkRouteFinder.h"
@@ -6,6 +6,12 @@
 #include "EngineUtils.h"
 #include "NavigationPath.h"
 #include "NavigationSystem.h"
+#include "DrawDebugHelpers.h"
+
+#if WITH_EDITOR
+#include "Editor.h"
+#include "Misc/MessageDialog.h"
+#endif
 
 DEFINE_LOG_CATEGORY_STATIC(LogPathLinkSubsystem, Log, All);
 
@@ -28,6 +34,26 @@ void UPathLinkSubsystem::OnWorldBeginPlay(UWorld& InWorld)
     // BeginPlay 호출 순서에 상관없이 현재 레벨의 Link를 한 번 확실하게 수집합니다.
     // 이후 Streaming으로 새로 들어오는 Link는 각 APathLink::BeginPlay에서 자동 등록됩니다.
     RefreshLinks();
+
+    // 중복 배치는 레벨 디자이너가 놓치기 쉬운 치명적인 배치 실수이므로
+    // 단순 로그/자동 제외로 넘기지 않고 PIE/SIE 실행 자체를 즉시 중단합니다.
+    TArray<APathLink*> DuplicateLinks;
+    FString DuplicateSummary;
+    if (HasBlockingDuplicateLinks(DuplicateLinks, DuplicateSummary))
+    {
+        UE_LOG(
+            LogPathLinkSubsystem,
+            Error,
+            TEXT("[PathLink][BLOCKED][DuplicatePlacement] 중복 PathLink가 발견되어 PathLink 시스템 실행을 차단합니다.\n%s"),
+            *DuplicateSummary);
+
+#if WITH_EDITOR
+        if (InWorld.WorldType == EWorldType::PIE)
+        {
+            BlockEditorPlayForDuplicates(DuplicateSummary);
+        }
+#endif
+    }
 }
 
 void UPathLinkSubsystem::RefreshLinks()
@@ -119,6 +145,35 @@ TArray<APathLink*> UPathLinkSubsystem::GetEnabledLinks() const
     return Result;
 }
 
+TArray<APathLink*> UPathLinkSubsystem::GetUsableLinksForNavigation() const
+{
+    TArray<APathLink*> Result;
+
+    UWorld* World = GetWorld();
+    if (!IsValid(World) || World->GetNetMode() == NM_Client)
+    {
+        return Result;
+    }
+
+    for (const TWeakObjectPtr<APathLink>& WeakLink : RegisteredLinks)
+    {
+        APathLink* Link = WeakLink.Get();
+        if (!IsValid(Link) || !Link->IsUsable())
+        {
+            continue;
+        }
+
+        if (!Link->CanUseForNavigation())
+        {
+            continue;
+        }
+
+        Result.Add(Link);
+    }
+
+    return Result;
+}
+
 TArray<APathLink*> UPathLinkSubsystem::GetInvalidLinks() const
 {
     TArray<APathLink*> Result;
@@ -150,7 +205,7 @@ bool UPathLinkSubsystem::ValidateAllLinks(
             continue;
         }
 
-        if (Link->LogValidationErrors())
+        if (Link->ValidateAndLog())
         {
             ++OutValidCount;
         }
@@ -313,6 +368,92 @@ bool UPathLinkSubsystem::GetNavPathDistance(
     return true;
 }
 
+void UPathLinkSubsystem::DrawDebugRoute(
+    const TArray<FPathLinkRouteSegment>& RouteSegments,
+    const float Duration,
+    const float Thickness,
+    const bool PersistentLines)
+{
+    UWorld* World = GetWorld();
+    if (!IsValid(World) || RouteSegments.IsEmpty())
+    {
+        return;
+    }
+
+    // NavMesh 표면과 완전히 겹치면 선이 깜빡이거나 묻힐 수 있으므로 약간 위에 표시합니다.
+    constexpr float HeightOffset = 10.0f;
+    const FVector DebugOffset(0.0f, 0.0f, HeightOffset);
+
+    // NavMesh 일반 이동 구간은 Link 타입 색상과 구분되도록 흰색으로 고정합니다.
+    const FColor NormalRouteColor = FColor::White;
+
+    const auto GetLinkRouteColor = [](const EPathLinkType LinkType)
+    {
+        switch (LinkType)
+        {
+        case EPathLinkType::Teleport:
+            return FColor(170, 80, 255); // 보라색
+        case EPathLinkType::JumpPad:
+            return FColor(60, 220, 90);  // 초록색
+        case EPathLinkType::Jump:
+            return FColor(255, 220, 40); // 노란색
+        case EPathLinkType::Drop:
+            return FColor(70, 140, 255); // 파란색
+        default:
+            return FColor::White;
+        }
+    };
+
+    for (const FPathLinkRouteSegment& Segment : RouteSegments)
+    {
+        if (Segment.SegmentType == EPathLinkSegmentType::Normal)
+        {
+            // RouteFinder가 저장해 둔 실제 NavMesh PathPoints를 그대로 따라 그립니다.
+            if (Segment.PathPoints.Num() >= 2)
+            {
+                for (int32 PointIndex = 0; PointIndex < Segment.PathPoints.Num() - 1; ++PointIndex)
+                {
+                    DrawDebugLine(
+                        World,
+                        Segment.PathPoints[PointIndex] + DebugOffset,
+                        Segment.PathPoints[PointIndex + 1] + DebugOffset,
+                        NormalRouteColor,
+                        PersistentLines,
+                        Duration,
+                        0,
+                        Thickness);
+                }
+            }
+            else
+            {
+                // 예외적으로 PathPoints가 비어 있어도 Segment 자체의 시작/끝 위치는 시각화합니다.
+                DrawDebugLine(
+                    World,
+                    Segment.StartLocation + DebugOffset,
+                    Segment.EndLocation + DebugOffset,
+                    NormalRouteColor,
+                    PersistentLines,
+                    Duration,
+                    0,
+                    Thickness);
+            }
+        }
+        else
+        {
+            // Link 구간은 실제 선택된 이동 방향(Reverse 포함)의 Entry -> Exit를 타입 고정 색상으로 표시합니다.
+            DrawDebugLine(
+                World,
+                Segment.StartLocation + DebugOffset,
+                Segment.EndLocation + DebugOffset,
+                GetLinkRouteColor(Segment.LinkType),
+                PersistentLines,
+                Duration,
+                0,
+                Thickness + 2.0f);
+        }
+    }
+}
+
 bool UPathLinkSubsystem::FindShortestRoute(
     const FVector& StartLocation,
     const FVector& TargetLocation,
@@ -327,13 +468,36 @@ bool UPathLinkSubsystem::FindShortestRoute(
         return false;
     }
 
-    const TArray<APathLink*> EnabledLinks = GetEnabledLinks();
+    // AI/NavMesh 기반 Route 계산은 서버(또는 Standalone)에서만 수행합니다.
+    // Client World에는 NavigationSystem/NavData가 없을 수 있으며 이는 오류가 아닙니다.
+    if (World->GetNetMode() == NM_Client)
+    {
+        return false;
+    }
+
+    // 중복 배치가 하나라도 남아 있으면 일부 Link만 조용히 제외하고 계속 진행하지 않습니다.
+    // 잘못된 레벨 배치를 수정하기 전까지 PathLink Route 계산 자체를 실패시킵니다.
+    TArray<APathLink*> DuplicateLinks;
+    FString DuplicateSummary;
+    if (HasBlockingDuplicateLinks(DuplicateLinks, DuplicateSummary))
+    {
+        UE_LOG(
+            LogPathLinkSubsystem,
+            Error,
+            TEXT("[PathLink][BLOCKED][DuplicatePlacement] FindShortestRoute 실행 차단 | 중복 Link를 먼저 수정하세요.\n%s"),
+            *DuplicateSummary);
+        return false;
+    }
+
+    // 외부 조회용 GetEnabledLinks는 구조적으로 정상인 Enabled Link를 반환합니다.
+    // 실제 Route 계산에서는 현재 서버 NavMesh에서도 사용할 수 있는 Link만 별도로 필터링합니다.
+    const TArray<APathLink*> UsableLinks = GetUsableLinksForNavigation();
 
     FPathLinkRouteFinder RouteFinder(World);
     return RouteFinder.FindShortestRoute(
         StartLocation,
         TargetLocation,
-        EnabledLinks,
+        UsableLinks,
         PathfindingContext,
         OutResult);
 }
@@ -384,6 +548,72 @@ bool UPathLinkSubsystem::CanReach(
     return FindShortestRoute(StartLocation, TargetLocation, RouteResult, PathfindingContext);
 }
 
+bool UPathLinkSubsystem::HasBlockingDuplicateLinks(
+    TArray<APathLink*>& OutDuplicateLinks,
+    FString& OutSummary) const
+{
+    OutDuplicateLinks.Reset();
+    OutSummary.Reset();
+
+    TSet<const APathLink*> AddedLinks;
+    TArray<FString> SummaryLines;
+
+    for (const TWeakObjectPtr<APathLink>& WeakLink : RegisteredLinks)
+    {
+        APathLink* Link = WeakLink.Get();
+        if (!IsValid(Link))
+        {
+            continue;
+        }
+
+        FString Details;
+        if (!Link->HasDuplicatePlacementError(Details))
+        {
+            continue;
+        }
+
+        if (!AddedLinks.Contains(Link))
+        {
+            AddedLinks.Add(Link);
+            OutDuplicateLinks.Add(Link);
+        }
+
+        SummaryLines.Add(FString::Printf(
+            TEXT("- %s (%s)\n  %s"),
+            *Link->GetName(),
+            *UEnum::GetValueAsString(Link->GetLinkType()),
+            *Details.Replace(TEXT("\n"), TEXT("\n  "))));
+    }
+
+    if (OutDuplicateLinks.IsEmpty())
+    {
+        return false;
+    }
+
+    OutSummary = FString::Join(SummaryLines, TEXT("\n"));
+    return true;
+}
+
+#if WITH_EDITOR
+void UPathLinkSubsystem::BlockEditorPlayForDuplicates(const FString& Summary) const
+{
+    // 로그만 보고 지나치는 상황을 막기 위해 Modal 안내를 띄웁니다.
+    // 확인 버튼을 누르면 현재 PIE/SIE를 즉시 종료합니다.
+    const FText Message = FText::FromString(FString::Printf(
+        TEXT("중복 배치된 PathLink가 발견되어 실행을 중단합니다.\n\n")
+        TEXT("중복 Link를 제거하거나 TwoWay 설정을 수정한 뒤 다시 실행하세요.\n\n")
+        TEXT("%s"),
+        *Summary));
+
+    FMessageDialog::Open(EAppMsgType::Ok, Message);
+
+    if (GEditor)
+    {
+        GEditor->RequestEndPlayMap();
+    }
+}
+#endif
+
 void UPathLinkSubsystem::RegisterLink(APathLink* Link)
 {
     if (!IsValid(Link))
@@ -408,9 +638,10 @@ void UPathLinkSubsystem::RegisterLink(APathLink* Link)
     {
         RegisteredLinks.Add(Link);
 
-        // Invalid Link는 Registry에는 남겨 디버깅/조회할 수 있게 하되,
-        // 길찾기 후보에서는 IsUsable()에 의해 자동 제외됩니다.
-        // 등록 시 한 번 상세 오류를 출력해 어떤 Link의 어느 부분이 잘못됐는지 바로 확인할 수 있게 합니다.
+        // 일반 구조 Invalid Link는 Registry에는 남겨 디버깅/조회할 수 있게 하되
+        // IsUsable()에 의해 활성 Link 조회에서 제외됩니다. 실제 NavMesh 사용 가능 여부는 Route 계산 시 별도로 검사합니다.
+        // DuplicatePlacement는 별도 Blocking Error로 처리되어 PIE/SIE와 Route 계산까지 차단됩니다.
+        // 등록 시 상세 오류를 출력해 어떤 Link의 어느 부분이 잘못됐는지 바로 확인할 수 있게 합니다.
         Link->LogValidationErrors();
     }
 }

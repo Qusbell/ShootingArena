@@ -1,18 +1,31 @@
-#include "AI/PathLink/PathLink.h"
+﻿#include "AI/PathLink/PathLink.h"
 
 #include "AI/PathLink/PathLinkSubsystem.h"
 #include "Components/SceneComponent.h"
+#if WITH_EDITORONLY_DATA
+#include "Components/BillboardComponent.h"
+#include "Engine/Texture2D.h"
+#include "UObject/ConstructorHelpers.h"
+#endif
+#include "CollisionQueryParams.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "NavigationSystem.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogPathLink, Log, All);
 
 namespace PathLinkComponentNames
 {
-    static const FName PortalTrigger(TEXT("PortalTrigger"));
     static const FName ExitDirection(TEXT("ExitDirection"));
-    static const FName JumpPadTrigger(TEXT("JumpPadTrigger"));
+}
+
+namespace PathLinkPlacement
+{
+    constexpr float GroundTraceStartHeight = 50.0f;
+    constexpr float GroundTraceDistance = 100000.0f;
+    constexpr float GroundTolerance = 10.0f;
+    constexpr float DuplicatePointTolerance = 25.0f;
 }
 
 namespace
@@ -101,6 +114,30 @@ APathLink::APathLink()
     SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
     SetRootComponent(SceneRoot);
 
+#if WITH_EDITORONLY_DATA
+    // SceneComponent만 있으면 레벨 뷰포트에서 PathLink를 직접 클릭하기 어렵습니다.
+    // Editor 전용 Billboard를 두어 World Outliner를 거치지 않고 뷰포트에서 바로 선택할 수 있게 합니다.
+    EditorIcon = CreateDefaultSubobject<UBillboardComponent>(TEXT("EditorIcon"));
+    if (EditorIcon)
+    {
+        EditorIcon->SetupAttachment(SceneRoot);
+        EditorIcon->SetRelativeLocation(FVector(0.0f, 0.0f, 30.0f));
+        EditorIcon->SetHiddenInGame(true);
+        EditorIcon->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+        EditorIcon->bIsScreenSizeScaled = true;
+        EditorIcon->ScreenSize = 0.0025f;
+        EditorIcon->bIsEditorOnly = true;
+
+        // Engine에 기본 포함된 Editor 아이콘을 사용합니다. 별도 프로젝트 리소스가 필요하지 않습니다.
+        static ConstructorHelpers::FObjectFinderOptional<UTexture2D> PathLinkIconTexture(
+            TEXT("/Engine/EditorResources/S_Actor.S_Actor"));
+        if (PathLinkIconTexture.Succeeded())
+        {
+            EditorIcon->SetSprite(PathLinkIconTexture.Get());
+        }
+    }
+#endif
+
     SetActorEnableCollision(false);
     SetReplicates(false);
 }
@@ -148,6 +185,51 @@ void APathLink::Tick(const float DeltaSeconds)
 #endif
 }
 
+void APathLink::AttachToGround()
+{
+#if WITH_EDITOR
+    UWorld* World = GetWorld();
+    if (!IsValid(World) || World->IsGameWorld())
+    {
+        UE_LOG(
+            LogPathLink,
+            Error,
+            TEXT("[PathLink][AttachToGround] Link=%s | Error=Editor World에서만 사용할 수 있습니다."),
+            *GetName());
+        return;
+    }
+
+    FHitResult GroundHit;
+    if (!TraceGround(GroundHit))
+    {
+        UE_LOG(
+            LogPathLink,
+            Error,
+            TEXT("[PathLink][AttachToGround] Link=%s | Error=현재 위치 아래에서 지면을 찾지 못했습니다."),
+            *GetName());
+        return;
+    }
+
+    Modify();
+    SetActorLocation(GroundHit.ImpactPoint, false, nullptr, ETeleportType::TeleportPhysics);
+    MarkPackageDirty();
+
+    UE_LOG(
+        LogPathLink,
+        Log,
+        TEXT("[PathLink][AttachToGround] Link=%s | Ground=%s | Location=%s"),
+        *GetName(),
+        *GetNameSafe(GroundHit.GetActor()),
+        *GroundHit.ImpactPoint.ToCompactString());
+#else
+    UE_LOG(
+        LogPathLink,
+        Warning,
+        TEXT("[PathLink][AttachToGround] Link=%s | Editor 전용 기능입니다."),
+        *GetName());
+#endif
+}
+
 bool APathLink::IsValidLink() const
 {
     TArray<FString> Errors;
@@ -175,6 +257,18 @@ bool APathLink::ValidateAndLog() const
     TArray<FString> Errors;
     CollectValidationErrors(Errors);
 
+    // 구조가 정상일 때만 Navigation 상태를 추가 검사합니다.
+    // Client World는 AI Route 계산 주체가 아니며 NavData가 없을 수 있으므로 Navigation 오류로 취급하지 않습니다.
+    if (Errors.IsEmpty())
+    {
+        if (const UWorld* World = GetWorld(); IsValid(World) && World->GetNetMode() != NM_Client)
+        {
+            TArray<FString> NavigationErrors;
+            CollectNavigationErrors(NavigationErrors);
+            Errors.Append(NavigationErrors);
+        }
+    }
+
     const FString TypeName = LinkTypeToString(LinkType);
 
     if (Errors.IsEmpty())
@@ -182,10 +276,10 @@ bool APathLink::ValidateAndLog() const
         UE_LOG(
             LogPathLink,
             Log,
-            TEXT("[PathLink][VALID] Link=%s | Type=%s | EntryActor=%s | ExitActor=%s | TwoWay=%s | Enabled=%s"),
+            TEXT("[PathLink][VALID] Link=%s | Type=%s | Entry=Self(%s) | ExitActor=%s | TwoWay=%s | Enabled=%s"),
             *GetName(),
             *TypeName,
-            *GetNameSafe(EntryActor.Get()),
+            *GetActorLocation().ToCompactString(),
             *GetNameSafe(ExitActor.Get()),
             TwoWay ? TEXT("true") : TEXT("false"),
             Enabled ? TEXT("true") : TEXT("false"));
@@ -209,6 +303,11 @@ bool APathLink::ValidateAndLog() const
     }
 
     return false;
+}
+
+void APathLink::ValidateInEditor()
+{
+    ValidateAndLog();
 }
 
 bool APathLink::LogValidationErrors() const
@@ -242,6 +341,37 @@ bool APathLink::LogValidationErrors() const
     return false;
 }
 
+bool APathLink::HasDuplicatePlacementError(FString& OutDetails) const
+{
+    OutDetails.Reset();
+
+    // ExitActor가 없거나 위치가 비정상인 경우에는 Duplicate 비교 자체를 수행할 수 없습니다.
+    // 이런 오류는 기존 Validation에서 별도로 잡습니다.
+    if (!IsValid(ExitActor))
+    {
+        return false;
+    }
+
+    const FVector ResolvedEntry = GetActorLocation();
+    const FVector ResolvedExit = ResolveExitPoint(ExitActor, ExitOffset);
+
+    if (ResolvedEntry.ContainsNaN() || ResolvedExit.ContainsNaN())
+    {
+        return false;
+    }
+
+    TArray<FString> DuplicateErrors;
+    CollectDuplicatePlacementErrors(ResolvedEntry, ResolvedExit, DuplicateErrors);
+
+    if (DuplicateErrors.IsEmpty())
+    {
+        return false;
+    }
+
+    OutDetails = FString::Join(DuplicateErrors, TEXT("\n"));
+    return true;
+}
+
 void APathLink::CollectValidationErrors(TArray<FString>& OutErrors) const
 {
     OutErrors.Reset();
@@ -255,26 +385,23 @@ void APathLink::CollectValidationErrors(TArray<FString>& OutErrors) const
         }
     }
 
-    // 1) 공통 Actor 설정 검사
-    if (!IsValid(EntryActor))
+    // Entry는 별도 Actor가 아니라 PathLink 자기 자신입니다.
+    UWorld* World = GetWorld();
+    if (!IsValid(World))
     {
-        OutErrors.Add(TEXT("[EntryActor] EntryActor가 지정되지 않았거나 유효하지 않습니다."));
+        OutErrors.Add(TEXT("[World] PathLink가 유효한 World를 찾을 수 없습니다."));
+        return;
+    }
+
+    if (GetActorLocation().ContainsNaN())
+    {
+        OutErrors.Add(TEXT("[EntryLocation] PathLink 자신의 위치에 NaN 또는 유효하지 않은 수치가 포함되어 있습니다."));
     }
 
     if (!IsValid(ExitActor))
     {
         OutErrors.Add(TEXT("[ExitActor] ExitActor가 지정되지 않았거나 유효하지 않습니다."));
-    }
-
-    if (!OutErrors.IsEmpty())
-    {
-        // Actor가 없는 상태에서는 아래 검사가 의미가 없으므로 여기서 종료합니다.
         return;
-    }
-
-    if (EntryActor == this)
-    {
-        OutErrors.Add(TEXT("[EntryActor] PathLink 자기 자신을 EntryActor로 지정할 수 없습니다."));
     }
 
     if (ExitActor == this)
@@ -282,24 +409,9 @@ void APathLink::CollectValidationErrors(TArray<FString>& OutErrors) const
         OutErrors.Add(TEXT("[ExitActor] PathLink 자기 자신을 ExitActor로 지정할 수 없습니다."));
     }
 
-    if (EntryActor == ExitActor)
-    {
-        OutErrors.Add(TEXT("[EntryActor/ExitActor] EntryActor와 ExitActor가 같은 Actor입니다. 서로 다른 Actor를 지정해야 합니다."));
-    }
-
-    if (EntryActor->GetWorld() != GetWorld())
-    {
-        OutErrors.Add(TEXT("[EntryActor] EntryActor가 PathLink와 다른 World에 속해 있습니다."));
-    }
-
-    if (ExitActor->GetWorld() != GetWorld())
+    if (ExitActor->GetWorld() != World)
     {
         OutErrors.Add(TEXT("[ExitActor] ExitActor가 PathLink와 다른 World에 속해 있습니다."));
-    }
-
-    if (EntryOffset.ContainsNaN())
-    {
-        OutErrors.Add(TEXT("[EntryOffset] EntryOffset에 NaN 또는 유효하지 않은 수치가 포함되어 있습니다."));
     }
 
     if (ExitOffset.ContainsNaN())
@@ -307,106 +419,57 @@ void APathLink::CollectValidationErrors(TArray<FString>& OutErrors) const
         OutErrors.Add(TEXT("[ExitOffset] ExitOffset에 NaN 또는 유효하지 않은 수치가 포함되어 있습니다."));
     }
 
-    // 2) Type별 기존 기믹 구조 검사
+    // Type별 설정 검사
     switch (LinkType)
     {
     case EPathLinkType::Teleport:
-    {
-        // 정방향은 Entry Portal의 PortalTrigger -> Exit Portal의 ExitDirection입니다.
-        if (!FindSceneComponentByName(EntryActor, PathLinkComponentNames::PortalTrigger))
-        {
-            OutErrors.Add(FString::Printf(
-                TEXT("[EntryActor.PortalTrigger] Teleport EntryActor '%s'에서 PortalTrigger 컴포넌트를 찾을 수 없습니다."),
-                *GetNameSafe(EntryActor.Get())));
-        }
-
+        // Teleport는 ExitActor의 실제 출구 위치를 자동으로 잡기 위해 ExitDirection을 요구합니다.
         if (!FindSceneComponentByName(ExitActor, PathLinkComponentNames::ExitDirection))
         {
             OutErrors.Add(FString::Printf(
                 TEXT("[ExitActor.ExitDirection] Teleport ExitActor '%s'에서 ExitDirection 컴포넌트를 찾을 수 없습니다."),
                 *GetNameSafe(ExitActor.Get())));
         }
-
-        // TwoWay이면 역방향도 실제 기믹 구조가 성립해야 합니다.
-        if (TwoWay)
-        {
-            if (!FindSceneComponentByName(ExitActor, PathLinkComponentNames::PortalTrigger))
-            {
-                OutErrors.Add(FString::Printf(
-                    TEXT("[TwoWay.ExitActor.PortalTrigger] TwoWay 역방향 진입을 위해 ExitActor '%s'에도 PortalTrigger가 필요합니다."),
-                    *GetNameSafe(ExitActor.Get())));
-            }
-
-            if (!FindSceneComponentByName(EntryActor, PathLinkComponentNames::ExitDirection))
-            {
-                OutErrors.Add(FString::Printf(
-                    TEXT("[TwoWay.EntryActor.ExitDirection] TwoWay 역방향 출구를 위해 EntryActor '%s'에도 ExitDirection이 필요합니다."),
-                    *GetNameSafe(EntryActor.Get())));
-            }
-        }
         break;
-    }
 
     case EPathLinkType::JumpPad:
-    {
-        if (!FindSceneComponentByName(EntryActor, PathLinkComponentNames::JumpPadTrigger))
-        {
-            OutErrors.Add(FString::Printf(
-                TEXT("[EntryActor.JumpPadTrigger] JumpPad EntryActor '%s'에서 JumpPadTrigger 컴포넌트를 찾을 수 없습니다."),
-                *GetNameSafe(EntryActor.Get())));
-        }
-
-        // 현재 구조는 EntryActor=JumpPad, ExitActor=TargetPoint이므로 하나의 Link를 역방향으로 사용할 수 없습니다.
+        // PathLink 자체가 JumpPad 진입점이므로 별도의 진입 Actor 참조를 받지 않습니다.
         if (TwoWay)
         {
-            OutErrors.Add(TEXT("[TwoWay] 현재 JumpPad Link 구조에서는 TwoWay를 지원하지 않습니다. 역방향 점프패드가 필요하면 별도의 PathLink를 추가하세요."));
+            OutErrors.Add(TEXT("[TwoWay] JumpPad 타입은 단방향 Self -> Exit로 사용해야 합니다. TwoWay를 false로 설정하세요."));
         }
         break;
-    }
 
     case EPathLinkType::Drop:
-        // Drop은 의미상 Entry -> Exit 단방향 이동입니다.
         if (TwoWay)
         {
-            OutErrors.Add(TEXT("[TwoWay] Drop 타입은 단방향 Entry -> Exit로 사용해야 합니다. TwoWay를 false로 설정하세요."));
+            OutErrors.Add(TEXT("[TwoWay] Drop 타입은 단방향 Self -> Exit로 사용해야 합니다. TwoWay를 false로 설정하세요."));
         }
         break;
 
     case EPathLinkType::Jump:
     default:
-        // Jump는 별도 기믹 Component 없이 위치 Actor만으로 사용할 수 있으며 TwoWay도 허용합니다.
         break;
     }
 
-    // 타입 검사에서 이미 실패했다면 잘못된 Component fallback 위치로 NavMesh 검사까지 이어가지 않습니다.
     if (!OutErrors.IsEmpty())
     {
         return;
     }
 
-    // 3) 실제 해석 위치 검사
-    const FVector ResolvedEntry = ResolveEntryPoint(EntryActor, EntryOffset);
+    const FVector ResolvedEntry = GetActorLocation();
     const FVector ResolvedExit = ResolveExitPoint(ExitActor, ExitOffset);
-
-    if (ResolvedEntry.ContainsNaN())
-    {
-        OutErrors.Add(TEXT("[EntryLocation] 계산된 Entry 위치에 NaN 또는 유효하지 않은 수치가 포함되어 있습니다."));
-    }
 
     if (ResolvedExit.ContainsNaN())
     {
         OutErrors.Add(TEXT("[ExitLocation] 계산된 Exit 위치에 NaN 또는 유효하지 않은 수치가 포함되어 있습니다."));
-    }
-
-    if (!OutErrors.IsEmpty())
-    {
         return;
     }
 
     if (ResolvedEntry.Equals(ResolvedExit, 1.0f))
     {
         OutErrors.Add(FString::Printf(
-            TEXT("[EntryLocation/ExitLocation] 계산된 Entry와 Exit 위치가 사실상 같습니다. Entry=(%s), Exit=(%s)"),
+            TEXT("[EntryLocation/ExitLocation] PathLink Entry와 Exit 위치가 사실상 같습니다. Entry=(%s), Exit=(%s)"),
             *ResolvedEntry.ToCompactString(),
             *ResolvedExit.ToCompactString()));
         return;
@@ -415,18 +478,125 @@ void APathLink::CollectValidationErrors(TArray<FString>& OutErrors) const
     if (LinkType == EPathLinkType::Drop && ResolvedEntry.Z <= ResolvedExit.Z + 1.0f)
     {
         OutErrors.Add(FString::Printf(
-            TEXT("[DropDirection] Drop은 Entry가 Exit보다 높은 위치여야 합니다. EntryZ=%.2f, ExitZ=%.2f"),
+            TEXT("[DropDirection] Drop은 PathLink Entry가 Exit보다 높은 위치여야 합니다. EntryZ=%.2f, ExitZ=%.2f"),
             ResolvedEntry.Z,
             ResolvedExit.Z));
     }
+
+    // PathLink Actor 자체가 Entry이므로 지면 배치 상태도 검사합니다.
+    FHitResult GroundHit;
+    if (!TraceGround(GroundHit))
+    {
+        OutErrors.Add(TEXT("[EntryGround] PathLink Entry 아래에서 지면을 찾을 수 없습니다. 배치 위치를 확인하세요."));
+    }
+    else
+    {
+        const float GroundGap = FMath::Abs(ResolvedEntry.Z - GroundHit.ImpactPoint.Z);
+        if (GroundGap > PathLinkPlacement::GroundTolerance)
+        {
+            OutErrors.Add(FString::Printf(
+                TEXT("[EntryGround] PathLink Entry가 지면에서 %.2fcm 떨어져 있습니다. Details의 'Attach To Ground' 버튼을 눌러 지면에 맞춰주세요."),
+                GroundGap));
+        }
+    }
+
+    // 같은 타입의 동일 연결이 여러 번 배치됐는지 검사합니다.
+    CollectDuplicatePlacementErrors(ResolvedEntry, ResolvedExit, OutErrors);
 
     if (!OutErrors.IsEmpty())
     {
         return;
     }
 
-    // 4) NavMesh 연결 가능성 검사
-    // Route는 일반 NavMesh 구간과 Link를 결합하므로 양쪽 Endpoint가 NavMesh에 투영 가능해야 합니다.
+}
+
+void APathLink::CollectDuplicatePlacementErrors(
+    const FVector& ResolvedEntry,
+    const FVector& ResolvedExit,
+    TArray<FString>& OutErrors) const
+{
+    UWorld* World = GetWorld();
+    if (!IsValid(World))
+    {
+        return;
+    }
+
+    const double ToleranceSquared = FMath::Square(static_cast<double>(PathLinkPlacement::DuplicatePointTolerance));
+
+    for (TActorIterator<APathLink> It(World); It; ++It)
+    {
+        const APathLink* Other = *It;
+        if (!IsValid(Other) || Other == this || Other->LinkType != LinkType || !IsValid(Other->ExitActor))
+        {
+            continue;
+        }
+
+        const FVector OtherEntry = Other->GetActorLocation();
+        const FVector OtherExit = Other->ResolveExitPoint(Other->ExitActor, Other->ExitOffset);
+
+        if (OtherEntry.ContainsNaN() || OtherExit.ContainsNaN())
+        {
+            continue;
+        }
+
+        const bool SameForward =
+            FVector::DistSquared(ResolvedEntry, OtherEntry) <= ToleranceSquared
+            && FVector::DistSquared(ResolvedExit, OtherExit) <= ToleranceSquared;
+
+        if (SameForward)
+        {
+            OutErrors.Add(FString::Printf(
+                TEXT("[DuplicatePlacement] '%s'와 같은 타입/Entry/Exit 연결이 중복 배치되어 있습니다. 두 Link 중 불필요한 Link를 제거하세요."),
+                *Other->GetName()));
+            continue;
+        }
+
+        // 서로 반대 방향의 단방향 Link 두 개는 의도된 구성일 수 있으므로 허용합니다.
+        // 단, 둘 중 하나라도 TwoWay이면 이미 반대 방향 Edge까지 포함하므로 중복으로 판단합니다.
+        const bool SameReverse =
+            FVector::DistSquared(ResolvedEntry, OtherExit) <= ToleranceSquared
+            && FVector::DistSquared(ResolvedExit, OtherEntry) <= ToleranceSquared;
+
+        if (SameReverse && (TwoWay || Other->TwoWay))
+        {
+            OutErrors.Add(FString::Printf(
+                TEXT("[DuplicatePlacement] '%s'와 역방향 연결이 겹칩니다. TwoWay Link와 별도 역방향 Link를 동시에 배치하지 마세요."),
+                *Other->GetName()));
+        }
+    }
+}
+
+bool APathLink::TraceGround(FHitResult& OutHit) const
+{
+    OutHit = FHitResult();
+
+    UWorld* World = GetWorld();
+    if (!IsValid(World))
+    {
+        return false;
+    }
+
+    const FVector CurrentLocation = GetActorLocation();
+    const FVector TraceStart = CurrentLocation + FVector::UpVector * PathLinkPlacement::GroundTraceStartHeight;
+    const FVector TraceEnd = CurrentLocation - FVector::UpVector * PathLinkPlacement::GroundTraceDistance;
+
+    FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(PathLinkAttachToGround), false, this);
+    QueryParams.AddIgnoredActor(this);
+
+    // 일반 지면/StaticMesh/Landscape가 기본적으로 Block하는 Visibility 채널을 사용합니다.
+    // Trigger Volume 등에 잘못 Snap되는 것을 피하기 위해 ObjectType 전체 조회는 사용하지 않습니다.
+    return World->LineTraceSingleByChannel(
+        OutHit,
+        TraceStart,
+        TraceEnd,
+        ECC_Visibility,
+        QueryParams);
+}
+
+void APathLink::CollectNavigationErrors(TArray<FString>& OutErrors) const
+{
+    OutErrors.Reset();
+
     UWorld* World = GetWorld();
     if (!IsValid(World))
     {
@@ -434,16 +604,33 @@ void APathLink::CollectValidationErrors(TArray<FString>& OutErrors) const
         return;
     }
 
-    if (!IsValid(UNavigationSystemV1::GetCurrent(World)))
+    // Client는 AI/NavMesh Route 계산 주체가 아닙니다.
+    // Client에 NavData가 없다는 이유로 정상 배치된 Link를 Invalid로 만들지 않습니다.
+    if (World->GetNetMode() == NM_Client)
+    {
+        return;
+    }
+
+    if (!IsValidLink())
+    {
+        OutErrors.Add(TEXT("[Validation] Link 구조 Validation이 실패해 Navigation 사용 여부를 검사할 수 없습니다."));
+        return;
+    }
+
+    UNavigationSystemV1* NavSystem = UNavigationSystemV1::GetCurrent(World);
+    if (!IsValid(NavSystem))
     {
         OutErrors.Add(TEXT("[NavigationSystem] 현재 World에서 NavigationSystem을 찾을 수 없습니다. NavMesh 설정을 확인하세요."));
         return;
     }
 
+    const FVector ResolvedEntry = GetActorLocation();
+    const FVector ResolvedExit = ResolveExitPoint(ExitActor, ExitOffset);
+
     if (!CanProjectToNavigation(ResolvedEntry))
     {
         OutErrors.Add(FString::Printf(
-            TEXT("[EntryNavigation] Entry 위치를 NavMesh에 투영할 수 없습니다. Entry=(%s)"),
+            TEXT("[EntryNavigation] PathLink Entry 위치를 NavMesh에 투영할 수 없습니다. Entry=(%s)"),
             *ResolvedEntry.ToCompactString()));
     }
 
@@ -453,6 +640,24 @@ void APathLink::CollectValidationErrors(TArray<FString>& OutErrors) const
             TEXT("[ExitNavigation] Exit 위치를 NavMesh에 투영할 수 없습니다. Exit=(%s)"),
             *ResolvedExit.ToCompactString()));
     }
+}
+
+bool APathLink::CanUseForNavigation() const
+{
+    UWorld* World = GetWorld();
+    if (!IsValid(World) || World->GetNetMode() == NM_Client)
+    {
+        return false;
+    }
+
+    if (!IsUsable())
+    {
+        return false;
+    }
+
+    TArray<FString> NavigationErrors;
+    CollectNavigationErrors(NavigationErrors);
+    return NavigationErrors.IsEmpty();
 }
 
 bool APathLink::CanProjectToNavigation(const FVector& WorldLocation) const
@@ -482,33 +687,14 @@ bool APathLink::CanProjectToNavigation(const FVector& WorldLocation) const
 
 FVector APathLink::GetEntryLocation() const
 {
-    FVector EntryLocation;
-    FVector ExitLocation;
-    FString FailureReason;
-
-    if (TryResolveTravelLocations(false, EntryLocation, ExitLocation, FailureReason))
-    {
-        return EntryLocation;
-    }
-
-    return IsValid(EntryActor)
-        ? AddLocalOffset(EntryActor, EntryActor->GetActorLocation(), EntryOffset)
-        : GetActorLocation();
+    // 구조 변경 후 Entry는 항상 PathLink Actor 자기 자신입니다.
+    return GetActorLocation();
 }
 
 FVector APathLink::GetExitLocation() const
 {
-    FVector EntryLocation;
-    FVector ExitLocation;
-    FString FailureReason;
-
-    if (TryResolveTravelLocations(false, EntryLocation, ExitLocation, FailureReason))
-    {
-        return ExitLocation;
-    }
-
     return IsValid(ExitActor)
-        ? AddLocalOffset(ExitActor, ExitActor->GetActorLocation(), ExitOffset)
+        ? ResolveExitPoint(ExitActor, ExitOffset)
         : GetActorLocation();
 }
 
@@ -556,14 +742,12 @@ bool APathLink::TryResolveTravelLocations(
         return false;
     }
 
-    AActor* TravelEntryActor = Reverse ? ExitActor.Get() : EntryActor.Get();
-    AActor* TravelExitActor = Reverse ? EntryActor.Get() : ExitActor.Get();
+    const FVector ForwardEntry = GetActorLocation();
+    const FVector ForwardExit = ResolveExitPoint(ExitActor, ExitOffset);
 
-    const FVector TravelEntryOffset = Reverse ? ExitOffset : EntryOffset;
-    const FVector TravelExitOffset = Reverse ? EntryOffset : ExitOffset;
-
-    OutEntryLocation = ResolveEntryPoint(TravelEntryActor, TravelEntryOffset);
-    OutExitLocation = ResolveExitPoint(TravelExitActor, TravelExitOffset);
+    // TwoWay는 같은 두 Endpoint를 내부적으로 뒤집어 사용합니다.
+    OutEntryLocation = Reverse ? ForwardExit : ForwardEntry;
+    OutExitLocation = Reverse ? ForwardEntry : ForwardExit;
 
     if (OutEntryLocation.ContainsNaN() || OutExitLocation.ContainsNaN())
     {
@@ -600,47 +784,6 @@ double APathLink::GetTravelDistance(const bool Reverse) const
     return FVector::Distance(TravelEntry, TravelExit);
 }
 
-FVector APathLink::ResolveEntryPoint(AActor* Actor, const FVector& LocalOffset) const
-{
-    if (!IsValid(Actor))
-    {
-        return FVector::ZeroVector;
-    }
-
-    FVector BaseLocation = Actor->GetActorLocation();
-
-    switch (LinkType)
-    {
-    case EPathLinkType::Teleport:
-        // 기존 BPA_YJS_Portal_TwoWay는 PortalTrigger 진입 시 순간이동을 실행합니다.
-        if (const USceneComponent* PortalTrigger = FindSceneComponentByName(
-            Actor,
-            PathLinkComponentNames::PortalTrigger))
-        {
-            BaseLocation = PortalTrigger->GetComponentLocation();
-        }
-        break;
-
-    case EPathLinkType::JumpPad:
-        // 기존 BPA_YJS_Direction_JumpPad는 JumpPadTrigger Overlap으로 실행됩니다.
-        if (const USceneComponent* JumpPadTrigger = FindSceneComponentByName(
-            Actor,
-            PathLinkComponentNames::JumpPadTrigger))
-        {
-            BaseLocation = JumpPadTrigger->GetComponentLocation();
-        }
-        break;
-
-    case EPathLinkType::Jump:
-    case EPathLinkType::Drop:
-    default:
-        // Jump/Drop은 별도 기믹 Actor가 없을 수 있으므로 지정한 Actor 위치를 그대로 기준으로 사용합니다.
-        break;
-    }
-
-    return AddLocalOffset(Actor, BaseLocation, LocalOffset);
-}
-
 FVector APathLink::ResolveExitPoint(AActor* Actor, const FVector& LocalOffset) const
 {
     if (!IsValid(Actor))
@@ -652,7 +795,8 @@ FVector APathLink::ResolveExitPoint(AActor* Actor, const FVector& LocalOffset) c
 
     if (LinkType == EPathLinkType::Teleport)
     {
-        // 기존 Portal은 TargetPortal의 ExitDirection 위치로 Character를 이동시킵니다.
+        // 기존 Portal은 TargetPortal의 ExitDirection 위치로 Character를 이동시키므로
+        // ExitActor만 지정해도 실제 출구 위치를 우선 사용합니다.
         if (const USceneComponent* ExitDirection = FindSceneComponentByName(
             Actor,
             PathLinkComponentNames::ExitDirection))
@@ -661,7 +805,6 @@ FVector APathLink::ResolveExitPoint(AActor* Actor, const FVector& LocalOffset) c
         }
     }
 
-    // JumpPad ExitActor는 기존 JumpPad의 Target Point Actor를 지정하므로 ActorLocation을 그대로 사용합니다.
     return AddLocalOffset(Actor, BaseLocation, LocalOffset);
 }
 
@@ -690,7 +833,7 @@ FColor APathLink::GetVisualColor() const
 
 void APathLink::DrawEditorVisual() const
 {
-    if (!ShowVisual || !IsValid(EntryActor) || !IsValid(ExitActor))
+    if (!ShowVisual || !IsValid(ExitActor))
     {
         return;
     }
@@ -701,10 +844,10 @@ void APathLink::DrawEditorVisual() const
         return;
     }
 
-    // Visual은 실제 Route 계산에서 사용하는 위치와 동일한 Resolver를 사용합니다.
-    // 따라서 PortalTrigger / ExitDirection / JumpPadTrigger 보정 결과를 그대로 확인할 수 있습니다.
-    FVector EntryVisual = ResolveEntryPoint(EntryActor, EntryOffset);
-    FVector ExitVisual = ResolveExitPoint(ExitActor, ExitOffset);
+    // Entry는 PathLink Actor 자신의 위치입니다.
+    // Exit은 타입별 Resolver를 사용해 실제 Route 계산 위치와 동일하게 표시합니다.
+    const FVector EntryVisual = GetActorLocation();
+    const FVector ExitVisual = ResolveExitPoint(ExitActor, ExitOffset);
 
     if (EntryVisual.ContainsNaN() || ExitVisual.ContainsNaN())
     {
@@ -719,7 +862,6 @@ void APathLink::DrawEditorVisual() const
 
     const FColor Color = GetVisualColor();
 
-    // 매 Editor Frame 다시 그리기 때문에 참조 Actor를 이동하면 선/화살표도 즉시 따라갑니다.
     DrawDebugLine(
         World,
         EntryVisual,

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Subsystems/WorldSubsystem.h"
@@ -33,7 +33,7 @@ public:
     UFUNCTION(BlueprintPure, Category = "AI|PathLink")
     TArray<APathLink*> GetAllLinks() const;
 
-    /** 현재 실제 길찾기에서 사용 가능한 Enabled + Valid Link만 반환합니다. */
+    /** 현재 Enabled + 구조 Validation을 통과한 Link를 반환합니다. Client에서도 정상 배치 Link를 동일하게 조회할 수 있습니다. */
     UFUNCTION(BlueprintPure, Category = "AI|PathLink")
     TArray<APathLink*> GetEnabledLinks() const;
 
@@ -106,6 +106,26 @@ public:
         const FVector& TargetLocation,
         AActor* PathfindingContext = nullptr) const;
 
+    /**
+     * FindShortestRoute가 선택한 최종 Route의 Segments를 월드에 Debug Line으로 표시합니다.
+     * OutResult를 Split한 상태에서도 Segments 핀을 바로 연결할 수 있습니다.
+     * Normal Segment는 실제 NavMesh PathPoints를 따라 그리고, Link Segment는 실제 Entry -> Exit를 타입별 고정 색상으로 표시합니다.
+     * Debug Draw는 네트워크로 복제되지 않으므로 이 함수를 호출한 World의 Viewport에서만 보입니다.
+     */
+    UFUNCTION(
+        BlueprintCallable,
+        Category = "AI|PathLink|Debug",
+        meta = (
+            BlueprintPure = "false",
+            AdvancedDisplay = "Duration,Thickness,PersistentLines"
+            )
+    )
+    void DrawDebugRoute(
+        const TArray<FPathLinkRouteSegment>& RouteSegments,
+        float Duration = 5.0f,
+        float Thickness = 5.0f,
+        bool PersistentLines = false);
+
     /** APathLink의 BeginPlay에서 자동 호출합니다. 외부 BP에서 직접 등록할 필요가 없습니다. */
     void RegisterLink(APathLink* Link);
 
@@ -113,6 +133,24 @@ public:
     void UnregisterLink(APathLink* Link);
 
 private:
+    /**
+     * 실제 서버/Standalone Route 계산에 사용할 수 있는 Link만 반환합니다.
+     * Enabled + 구조 Validation + 현재 NavMesh Endpoint Projection을 모두 통과해야 합니다.
+     * Client World에서는 빈 배열을 반환합니다.
+     */
+    TArray<APathLink*> GetUsableLinksForNavigation() const;
+
+    /**
+     * 중복 배치된 PathLink가 하나라도 있는지 검사합니다.
+     * 중복은 단순 Invalid와 달리 전체 PathLink Route 실행을 막는 Blocking Error로 취급합니다.
+     */
+    bool HasBlockingDuplicateLinks(TArray<APathLink*>& OutDuplicateLinks, FString& OutSummary) const;
+
+#if WITH_EDITOR
+    /** PIE/SIE에서 중복 Link를 발견했을 때 팝업을 띄우고 실행을 즉시 종료합니다. */
+    void BlockEditorPlayForDuplicates(const FString& Summary) const;
+#endif
+
     /** WeakPtr로 보관해 Level Streaming / World Partition Unload 시 Actor 수명을 붙잡지 않습니다. */
     TArray<TWeakObjectPtr<APathLink>> RegisteredLinks;
 };
