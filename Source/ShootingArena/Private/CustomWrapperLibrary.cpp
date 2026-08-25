@@ -253,3 +253,50 @@ bool UCustomWrapperLibrary::GetActiveBehaviorTreePath(
 
 	return OutNodePath.Num() > 0;
 }
+
+
+bool UCustomWrapperLibrary::GetPeakKeyFromRuntimeFloatCurve(
+	const FRuntimeFloatCurve& Curve,
+	float& OutPeakTime,
+	float& OutPeakValue)
+{
+	const FRichCurve* RichCurve = Curve.GetRichCurveConst();
+
+	if (!RichCurve)
+	{
+		OutPeakTime = 0.0f;
+		OutPeakValue = 0.0f;
+		return false;
+	}
+
+	const TArray<FRichCurveKey>& Keys = RichCurve->GetConstRefOfKeys();
+
+	if (Keys.IsEmpty())
+	{
+		OutPeakTime = 0.0f;
+		OutPeakValue = 0.0f;
+		return false;
+	}
+
+	OutPeakTime = Keys[0].Time;
+	OutPeakValue = Keys[0].Value;
+
+	for (int32 i = 1; i < Keys.Num(); ++i)
+	{
+		const FRichCurveKey& Key = Keys[i];
+
+		if (Key.Value > OutPeakValue)
+		{
+			OutPeakValue = Key.Value;
+			OutPeakTime = Key.Time;
+		}
+		else if (FMath::IsNearlyEqual(Key.Value, OutPeakValue) &&
+			Key.Time < OutPeakTime)
+		{
+			// 최고값이 같으면 더 가까운 거리 선택
+			OutPeakTime = Key.Time;
+		}
+	}
+
+	return true;
+}

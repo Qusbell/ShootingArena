@@ -84,4 +84,13 @@ public:
 		TArray<FString>& OutNodePath
 	);
 
+
+
+	UFUNCTION(BlueprintPure, Category = "AI|Curve")
+	static bool GetPeakKeyFromRuntimeFloatCurve(
+		const FRuntimeFloatCurve& Curve,
+		float& OutPeakTime,
+		float& OutPeakValue
+	);
+
 };
