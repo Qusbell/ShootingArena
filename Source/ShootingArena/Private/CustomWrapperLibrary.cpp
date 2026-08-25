@@ -70,7 +70,10 @@ ENavPathTestResult UCustomWrapperLibrary::TestPathExistsSync(
 	FSharedConstNavQueryFilter QueryFilter = UNavigationQueryFilter::GetQueryFilter(*TargetNavData, WorldContextObject, FilterClass);
 
 	// FPathFindingQuery 구조체 생성
-	FPathFindingQuery Query(WorldContextObject, *TargetNavData, PathStart, PathEnd, QueryFilter);
+	FPathFindingQuery Query(WorldContextObject, *TargetNavData, NavStart.Location, NavEnd.Location, QueryFilter);
+
+	Query.SetAllowPartialPaths(false);
+	Query.SetRequireNavigableEndLocation(true);
 
 	// TestPathSync 호출 (경로 객체를 할당하지 않고 Island 판정만 빠르게 수행)
 	const bool bPathExists = NavSys->TestPathSync(Query, EPathFindingMode::Hierarchical);
@@ -249,4 +252,51 @@ bool UCustomWrapperLibrary::GetActiveBehaviorTreePath(
 	Algo::Reverse(OutNodePath);
 
 	return OutNodePath.Num() > 0;
+}
+
+
+bool UCustomWrapperLibrary::GetPeakKeyFromRuntimeFloatCurve(
+	const FRuntimeFloatCurve& Curve,
+	float& OutPeakTime,
+	float& OutPeakValue)
+{
+	const FRichCurve* RichCurve = Curve.GetRichCurveConst();
+
+	if (!RichCurve)
+	{
+		OutPeakTime = 0.0f;
+		OutPeakValue = 0.0f;
+		return false;
+	}
+
+	const TArray<FRichCurveKey>& Keys = RichCurve->GetConstRefOfKeys();
+
+	if (Keys.IsEmpty())
+	{
+		OutPeakTime = 0.0f;
+		OutPeakValue = 0.0f;
+		return false;
+	}
+
+	OutPeakTime = Keys[0].Time;
+	OutPeakValue = Keys[0].Value;
+
+	for (int32 i = 1; i < Keys.Num(); ++i)
+	{
+		const FRichCurveKey& Key = Keys[i];
+
+		if (Key.Value > OutPeakValue)
+		{
+			OutPeakValue = Key.Value;
+			OutPeakTime = Key.Time;
+		}
+		else if (FMath::IsNearlyEqual(Key.Value, OutPeakValue) &&
+			Key.Time < OutPeakTime)
+		{
+			// 최고값이 같으면 더 가까운 거리 선택
+			OutPeakTime = Key.Time;
+		}
+	}
+
+	return true;
 }
