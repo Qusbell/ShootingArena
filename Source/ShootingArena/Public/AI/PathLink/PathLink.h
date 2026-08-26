@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
@@ -47,6 +47,12 @@ public:
     /** Enabled + 구조 Validation 기준으로 Link가 활성 상태인지 반환합니다. Navigation 사용 가능 여부는 별도로 검사합니다. */
     UFUNCTION(BlueprintPure, Category = "AI|PathLink|Validation")
     bool IsUsable() const { return Enabled && IsValidLink(); }
+
+    /**
+     * Route Cache 구축 전용 구조 Validation입니다.
+     * 중복 검사는 Subsystem이 전체 Link를 대상으로 한 번만 수행하므로 여기서는 제외합니다.
+     */
+    bool IsValidLinkForRouteCache() const;
 
     /**
      * IsValidLink와 동일한 검사를 수행하고, 실패한 모든 이유를 한 번에 반환합니다.
@@ -142,7 +148,8 @@ protected:
     EPathLinkType LinkType = EPathLinkType::Teleport;
 
     /**
-     * 특수 이동이 끝난 뒤 나오는 위치를 나타내는 Actor입니다.
+     * 특수 이동이 끝난 뒤 나오는 위치를 나타내는 범용 Actor/Marker입니다.
+     * LinkType과 관계없이 이 Actor의 위치(+ ExitOffset)를 Exit로 사용하며 특정 Portal 클래스/Component를 요구하지 않습니다.
      * Entry는 별도 Actor를 지정하지 않고 PathLink 자신의 위치를 사용합니다.
      */
     UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "AI|PathLink")
@@ -165,11 +172,11 @@ protected:
     FVector ExitOffset = FVector::ZeroVector;
 
 private:
-    /** 타입에 맞는 기존 BP Component를 찾아 Exit 위치를 계산합니다. 못 찾으면 ActorLocation을 사용합니다. */
+    /** 모든 LinkType 공통으로 ExitActor 위치 + Local Offset을 사용해 Exit 위치를 계산합니다. */
     FVector ResolveExitPoint(AActor* Actor, const FVector& LocalOffset) const;
 
     /** 배치/데이터 구조 Validation 오류를 "[Part] 상세 이유" 형식으로 수집합니다. Navigation 상태는 포함하지 않습니다. */
-    void CollectValidationErrors(TArray<FString>& OutErrors) const;
+    void CollectValidationErrors(TArray<FString>& OutErrors, bool bIncludeDuplicatePlacement = true) const;
 
     /** 현재 서버/Standalone World의 Navigation 사용 가능 여부를 별도로 수집합니다. */
     void CollectNavigationErrors(TArray<FString>& OutErrors) const;
