@@ -44,9 +44,12 @@ public:
     UFUNCTION(BlueprintPure, Category = "AI|PathLink|Validation")
     bool IsValidLink() const;
 
-    /** Enabled + 구조 Validation 기준으로 Link가 활성 상태인지 반환합니다. Navigation 사용 가능 여부는 별도로 검사합니다. */
+    /**
+     * 실제 Route 후보로 사용할 수 있는 Link인지 반환합니다.
+     * ExitActor가 없는 PathLink는 다른 Link의 Exit Marker로 사용할 수 있지만, 자기 자신은 Route 후보가 되지 않습니다.
+     */
     UFUNCTION(BlueprintPure, Category = "AI|PathLink|Validation")
-    bool IsUsable() const { return Enabled && IsValidLink(); }
+    bool IsUsable() const { return Enabled && IsValid(ExitActor) && IsValidLink(); }
 
     /**
      * Route Cache 구축 전용 구조 Validation입니다.
@@ -159,8 +162,11 @@ protected:
     UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "AI|PathLink")
     bool TwoWay = false;
 
-    /** false이면 Subsystem에는 존재하지만 실제 최단 경로 후보에서는 제외됩니다. */
-    UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "AI|PathLink")
+    /**
+     * false이면 실제 최단 경로 후보에서 제외됩니다.
+     * ExitActor가 없으면 Marker 전용이므로 Enabled 값과 관계없이 Route 후보가 아니며 Details에서도 비활성화됩니다.
+     */
+    UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "AI|PathLink", meta = (EditCondition = "ExitActor != nullptr"))
     bool Enabled = true;
 
     /** 에디터 뷰포트의 연결선/화살표 표시 여부입니다. 실제 길찾기에는 영향을 주지 않습니다. */

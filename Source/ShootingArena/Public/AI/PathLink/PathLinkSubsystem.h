@@ -33,11 +33,11 @@ public:
     UFUNCTION(BlueprintPure, Category = "AI|PathLink")
     TArray<APathLink*> GetAllLinks() const;
 
-    /** 현재 Enabled + 구조 Validation을 통과한 Link를 반환합니다. Client에서도 정상 배치 Link를 동일하게 조회할 수 있습니다. */
+    /** 현재 ExitActor가 있고 Enabled + 구조 Validation을 통과한 실제 Route Link만 반환합니다. Exit Marker 전용 PathLink는 제외됩니다. */
     UFUNCTION(BlueprintPure, Category = "AI|PathLink")
     TArray<APathLink*> GetEnabledLinks() const;
 
-    /** 현재 Registry에서 Validation에 실패한 Link만 반환합니다. Enabled 여부와는 무관합니다. */
+    /** 현재 Registry에서 Validation에 실패한 Link만 반환합니다. ExitActor가 없는 Marker 전용 PathLink는 Invalid로 보지 않습니다. */
     UFUNCTION(BlueprintPure, Category = "AI|PathLink|Validation")
     TArray<APathLink*> GetInvalidLinks() const;
 
@@ -48,7 +48,7 @@ public:
     UFUNCTION(BlueprintCallable, Category = "AI|PathLink|Validation")
     bool ValidateAllLinks(int32& OutValidCount, int32& OutInvalidCount) const;
 
-    /** 지정한 Type의 등록된 Link를 반환합니다. */
+    /** 지정한 Type의 실제 Route Link를 반환합니다. ExitActor가 없는 Marker 전용 PathLink는 제외됩니다. */
     UFUNCTION(BlueprintPure, Category = "AI|PathLink")
     TArray<APathLink*> GetLinksByType(EPathLinkType LinkType, bool OnlyEnabled = true) const;
 
@@ -56,7 +56,7 @@ public:
     UFUNCTION(BlueprintPure, Category = "AI|PathLink")
     int32 GetLinkCount() const;
 
-    /** 위치에서 가장 가까운 Link를 반환합니다. Entry/Exit 중 가까운 쪽을 기준으로 계산합니다. */
+    /** 위치에서 가장 가까운 실제 Route Link를 반환합니다. ExitActor가 없는 Marker는 제외하고 Entry/Exit 중 가까운 쪽을 기준으로 계산합니다. */
     UFUNCTION(BlueprintPure, Category = "AI|PathLink")
     APathLink* GetNearestLink(const FVector& Location, bool OnlyEnabled = true) const;
 

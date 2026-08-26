@@ -200,6 +200,13 @@ bool APathLink::IsValidLink() const
 
 bool APathLink::IsValidLinkForRouteCache() const
 {
+    // ExitActor가 없는 PathLink는 다른 Link의 Exit Marker로는 사용할 수 있지만
+    // 자기 자신이 이동 Link가 되는 것은 아니므로 Route Cache 후보에서 제외합니다.
+    if (!IsValid(ExitActor))
+    {
+        return false;
+    }
+
     TArray<FString> Errors;
     CollectValidationErrors(Errors, false);
     return Errors.IsEmpty();
@@ -241,6 +248,17 @@ bool APathLink::ValidateAndLog() const
 
     if (Errors.IsEmpty())
     {
+        if (!IsValid(ExitActor))
+        {
+            UE_LOG(
+                LogPathLink,
+                Log,
+                TEXT("[PathLink][MARKER] Link=%s | Entry=Self(%s) | ExitActor=None | RouteCandidate=false"),
+                *GetName(),
+                *GetActorLocation().ToCompactString());
+            return true;
+        }
+
         UE_LOG(
             LogPathLink,
             Log,
@@ -368,7 +386,8 @@ void APathLink::CollectValidationErrors(TArray<FString>& OutErrors, const bool b
 
     if (!IsValid(ExitActor))
     {
-        OutErrors.Add(TEXT("[ExitActor] ExitActor가 지정되지 않았거나 유효하지 않습니다."));
+        // ExitActor가 없는 PathLink는 "이동 Link"가 아니라 위치 Marker로 취급합니다.
+        // 다른 PathLink의 ExitActor로 참조할 수 있으며, Enabled가 true여도 Route 후보에는 들어가지 않습니다.
         return;
     }
 
@@ -578,6 +597,13 @@ void APathLink::CollectNavigationErrors(TArray<FString>& OutErrors) const
         return;
     }
 
+    // ExitActor가 없는 Marker 전용 PathLink는 자체 Navigation 검사가 필요하지 않습니다.
+    // 이 Actor를 Exit로 참조하는 실제 Link가 자신의 Exit 위치를 Navigation에 투영해 검증합니다.
+    if (!IsValid(ExitActor))
+    {
+        return;
+    }
+
     if (!IsValidLink())
     {
         OutErrors.Add(TEXT("[Validation] Link 구조 Validation이 실패해 Navigation 사용 여부를 검사할 수 없습니다."));
@@ -694,6 +720,12 @@ bool APathLink::TryResolveTravelLocations(
     OutEntryLocation = FVector::ZeroVector;
     OutExitLocation = FVector::ZeroVector;
     OutFailureReason.Reset();
+
+    if (!IsValid(ExitActor))
+    {
+        OutFailureReason = TEXT("[ExitActor] ExitActor가 없는 PathLink는 Exit Marker 전용이며 이동 Link로 사용할 수 없습니다.");
+        return false;
+    }
 
     TArray<FString> ValidationErrors;
     CollectValidationErrors(ValidationErrors, true);

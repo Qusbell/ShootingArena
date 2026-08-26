@@ -100,6 +100,7 @@ void UPathLinkSubsystem::RefreshLinks()
     int32 InvalidCount = 0;
     int32 EnabledCount = 0;
     int32 DisabledCount = 0;
+    int32 MarkerCount = 0;
 
     for (const TWeakObjectPtr<APathLink>& WeakLink : RegisteredLinks)
     {
@@ -109,30 +110,38 @@ void UPathLinkSubsystem::RefreshLinks()
             continue;
         }
 
-        if (Link->IsValidLink())
+        if (!Link->IsValidLink())
         {
-            ++ValidCount;
-            if (Link->IsEnabled())
-            {
-                ++EnabledCount;
-            }
-            else
-            {
-                ++DisabledCount;
-            }
+            ++InvalidCount;
+            continue;
+        }
+
+        // ExitActor가 없는 PathLink는 다른 Link의 Exit 위치를 표시하는 Marker로만 취급합니다.
+        // Enabled 값과 무관하게 실제 Route 후보/Enabled Link 개수에는 포함하지 않습니다.
+        if (!IsValid(Link->GetExitActor()))
+        {
+            ++MarkerCount;
+            continue;
+        }
+
+        ++ValidCount;
+        if (Link->IsEnabled())
+        {
+            ++EnabledCount;
         }
         else
         {
-            ++InvalidCount;
+            ++DisabledCount;
         }
     }
 
     UE_LOG(
         LogPathLinkSubsystem,
         Log,
-        TEXT("[PathLink][Registry] Refresh 완료 | Total=%d | Valid=%d | Invalid=%d | Enabled=%d | Disabled=%d"),
+        TEXT("[PathLink][Registry] Refresh 완료 | Total=%d | RouteLinks=%d | Markers=%d | Invalid=%d | Enabled=%d | Disabled=%d"),
         RegisteredLinks.Num(),
         ValidCount,
+        MarkerCount,
         InvalidCount,
         EnabledCount,
         DisabledCount);
@@ -231,7 +240,9 @@ TArray<APathLink*> UPathLinkSubsystem::GetLinksByType(
     for (const TWeakObjectPtr<APathLink>& WeakLink : RegisteredLinks)
     {
         APathLink* Link = WeakLink.Get();
-        if (!IsValid(Link) || Link->GetLinkType() != LinkType)
+        if (!IsValid(Link)
+            || !IsValid(Link->GetExitActor())
+            || Link->GetLinkType() != LinkType)
         {
             continue;
         }
@@ -271,7 +282,7 @@ APathLink* UPathLinkSubsystem::GetNearestLink(
     for (const TWeakObjectPtr<APathLink>& WeakLink : RegisteredLinks)
     {
         APathLink* Link = WeakLink.Get();
-        if (!IsValid(Link))
+        if (!IsValid(Link) || !IsValid(Link->GetExitActor()))
         {
             continue;
         }
