@@ -34,7 +34,7 @@ public:
         FPathLinkStaticGraph& OutGraph) const;
 
     /**
-     * 이미 구축된 Link -> Link Graph를 재사용해 Start/Target에 대한 동적 연결만 계산합니다.
+     * 이미 구축된 Link -> Link Graph를 재사용하고, Start/Target 쪽은 Nearest 후보 + 근사 비용으로 줄인 뒤 선택 Endpoint만 NavMesh로 정밀 검증합니다.
      */
     bool FindShortestRoute(
         const FVector& StartLocation,
