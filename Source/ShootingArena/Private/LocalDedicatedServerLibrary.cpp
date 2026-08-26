@@ -16,7 +16,10 @@ bool ULocalDedicatedServerLibrary::StartLocalDedicatedServer(const FString& MapN
 		return false;
 	}
 
-	const FString ServerExePath = FPaths::Combine(FPaths::ProjectDir(), TEXT("Binaries"), TEXT("Win64"), TEXT("ShootingArenaServer.exe"));
+	// 정식 Server 타겟(ShootingArenaServer.exe)은 런처 설치 엔진에서 빌드가 막혀있어서,
+	// 대신 에디터 실행 파일을 -game -server 옵션으로 띄워 로컬 전용 서버 대용으로 사용합니다.
+	// (쿠킹/패키징 없이 원본 에셋을 그대로 읽어서 동작합니다.)
+	const FString ServerExePath = FPaths::Combine(FPaths::EngineDir(), TEXT("Binaries"), TEXT("Win64"), TEXT("UnrealEditor.exe"));
 
 	if (!FPaths::FileExists(ServerExePath))
 	{
@@ -24,7 +27,8 @@ bool ULocalDedicatedServerLibrary::StartLocalDedicatedServer(const FString& MapN
 		return false;
 	}
 
-	const FString Params = FString::Printf(TEXT("%s -server -log -port=%d"), *MapName, Port);
+	const FString ProjectFilePath = FPaths::ConvertRelativePathToFull(FPaths::GetProjectFilePath());
+	const FString Params = FString::Printf(TEXT("\"%s\" %s -game -server -log -port=%d"), *ProjectFilePath, *MapName, Port);
 
 	uint32 OutProcessID = 0;
 	GLocalDedicatedServerHandle = FPlatformProcess::CreateProc(
