@@ -1,10 +1,11 @@
 #include "Camera/DeathCamActor.h"
 
-#include "Camera/CameraComponent.h"
 #include "Camera/DeathCamDataAsset.h"
+#include "Camera/CameraComponent.h"
+#include "Components/PrimitiveComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
-#include "Math/RotationMatrix.h"
+#include "Materials/MaterialInterface.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogDeathCamActor, Log, All);
 
@@ -26,13 +27,16 @@ void ADeathCamActor::Tick(float deltaSeconds)
 		return;
 	}
 
-	if (bTopView)
-	{
-		UpdateTopView(deltaSeconds);
-		return;
-	}
+	UpdateDeathCam(deltaSeconds);
+}
 
-	UpdateOrbit(deltaSeconds);
+void ADeathCamActor::EndPlay(const EEndPlayReason::Type endPlayReason)
+{
+	// StopDeathCam을 거치지 않고 World 종료/강제 Destroy가 발생해도
+	// Killer의 CustomDepth 상태가 남지 않도록 항상 원복합니다.
+	RemoveKillerHighlight();
+
+	Super::EndPlay(endPlayReason);
 }
 
 bool ADeathCamActor::InitializeDeathCam(
@@ -55,43 +59,57 @@ bool ADeathCamActor::InitializeDeathCam(
 
 	CacheSettings(inDeathCamData);
 
-	if (IsValid(otherActor))
-	{
-		// 기본 DeathCam:
-		// Death Location을 화면 중앙에 두고 Other 방향의 옆(90도)에서 바라보는 Side View입니다.
-		bTopView = false;
-		const FRotator initialRotation = CalculateOrbitTargetRotation();
+	// 최종 기획: Center = 사망 위치 + Offset.
+	// 기획서의 Offset 자료형이 Float이므로 현재 구현에서는 World Z 방향 Offset으로 해석합니다.
+	centerLocation = deathLocation + (FVector::UpVector * centerOffset);
 
-		// orbitDistance는 이제 고정 거리가 아니라 최소 거리입니다.
-		// Other가 멀면 Self를 중앙에 유지한 채 둘을 한 화면에 담을 수 있을 만큼 자동으로 뒤로 빠집니다.
-		currentTargetDistance = CalculateRequiredOrbitDistance(initialRotation);
-		ApplyCameraTransform(initialRotation, currentTargetDistance);
-	}
-	else
-	{
-		// 자살/환경 데미지처럼 Other가 없으면 처음부터 Top View입니다.
-		bTopView = true;
-		currentTargetDistance = topViewDistance;
-		topViewTargetRotation = FRotator(topViewPitch, 0.0f, 0.0f);
+	const FVector killerDirection = CalculateKillerDirection();
 
-		const FVector topViewLocation = ResolveTopViewLocation(currentTargetDistance);
-		SetActorLocationAndRotation(
-			topViewLocation,
-			topViewTargetRotation,
-			false,
-			nullptr,
-			ETeleportType::TeleportPhysics);
-	}
+	// 최종 기획의 "초기 DeathCam 위치"를 먼저 만들고,
+	// Center와 그 위치 사이의 거리를 MaxDistance로 확정합니다.
+	const FVector initialDesiredLocation = centerLocation - (killerDirection * initialCameraDistance);
+	maxDistance = FVector::Distance(centerLocation, initialDesiredLocation);
+
+	// 초기 위치가 벽 안쪽이면 Center -> 초기 위치 Sweep으로 가능한 지점까지만 이동합니다.
+	// 실제 Camera-Center 거리가 MaxDistance보다 짧아지는 것은 기획상 허용됩니다.
+	const FVector initialCameraLocation = ResolveInitialCameraLocation(initialDesiredLocation);
+	const FVector clampedInitialLocation = ClampCameraLocation(initialCameraLocation, killerDirection);
+	const FRotator initialRotation = CalculateLookAtCenterRotation(clampedInitialLocation);
+
+	SetActorLocationAndRotation(
+		clampedInitialLocation,
+		initialRotation,
+		false,
+		nullptr,
+		ETeleportType::TeleportPhysics);
+
+	// Post Process Material은 이 로컬 DeathCam 카메라에만 적용합니다.
+	// 따라서 다른 플레이어의 일반 카메라에는 Killer Highlight가 보이지 않습니다.
+	ApplyKillerHighlightPostProcess();
+	ApplyKillerHighlight();
 
 	bDeathCamActive = true;
 	SetActorTickEnabled(true);
+
+	UE_LOG(LogDeathCamActor, Log,
+		TEXT("DeathCam initialized. Center=%s Killer=%s MaxDistance=%.1f"),
+		*centerLocation.ToString(),
+		*GetNameSafe(otherActor),
+		maxDistance);
+
 	return true;
 }
 
 void ADeathCamActor::StopDeathCam()
 {
+	if (!bDeathCamActive && killerHighlightStates.IsEmpty())
+	{
+		return;
+	}
+
 	bDeathCamActive = false;
 	SetActorTickEnabled(false);
+	RemoveKillerHighlight();
 }
 
 void ADeathCamActor::CacheSettings(UDeathCamDataAsset* inDeathCamData)
@@ -102,371 +120,336 @@ void ADeathCamActor::CacheSettings(UDeathCamDataAsset* inDeathCamData)
 		return;
 	}
 
-	orbitDistance = inDeathCamData->orbitDistance;
-	orbitPitch = inDeathCamData->orbitPitch;
-	orbitYawOffset = inDeathCamData->orbitYawOffset;
-	orbitRotationSpeed = inDeathCamData->orbitRotationSpeed;
-	topViewDistance = inDeathCamData->topViewDistance;
-	topViewPitch = inDeathCamData->topViewPitch;
-	topViewYawOffset = inDeathCamData->topViewYawOffset;
-	topViewMoveSpeed = inDeathCamData->topViewMoveSpeed;
-	topViewRotationSpeed = inDeathCamData->topViewRotationSpeed;
-	orbitAlignmentTolerance = inDeathCamData->orbitAlignmentTolerance;
-	screenSafeRatio = inDeathCamData->screenSafeRatio;
+	centerOffset = inDeathCamData->centerOffset;
+	cameraMoveInterpSpeed = inDeathCamData->cameraMoveInterpSpeed;
+	bEnableKillerHighlight = inDeathCamData->bEnableKillerHighlight;
+	killerHighlightMaterial = inDeathCamData->killerHighlightMaterial;
+	killerHighlightStencilValue = inDeathCamData->killerHighlightStencilValue;
+
+	// 코드만 먼저 메인에 병합해도 기존 DA_DeathCamera_Default 값이 즉시 무효화되지 않도록
+	// 새 initialCameraDistance가 0이면 기존 orbitDistance 값을 migration fallback으로 사용합니다.
+	initialCameraDistance = inDeathCamData->initialCameraDistance > KINDA_SMALL_NUMBER
+		? inDeathCamData->initialCameraDistance
+		: inDeathCamData->orbitDistance;
+
+	initialCameraDistance = FMath::Max(initialCameraDistance, 0.0f);
+	cameraMoveInterpSpeed = FMath::Max(cameraMoveInterpSpeed, 0.0f);
+	killerHighlightStencilValue = FMath::Clamp(killerHighlightStencilValue, 0, 255);
 }
 
-FRotator ADeathCamActor::CalculateOrbitTargetRotation() const
+void ADeathCamActor::UpdateDeathCam(float deltaSeconds)
 {
-	if (!IsValid(otherActor))
-	{
-		return GetActorRotation();
-	}
-
-	const FVector toOther = otherActor->GetActorLocation() - deathLocation;
-	const float otherDirectionYaw = toOther.IsNearlyZero()
-		? GetActorRotation().Yaw
-		: toOther.Rotation().Yaw;
-
-	// 핵심:
-	// Other를 정면으로 바라보는 것이 아니라 DeathLocation -> Other 방향에서 90도 옆으로 빠집니다.
-	// Camera 위치는 deathLocation - Forward * Distance이고 Camera는 Forward를 바라보므로,
-	// Death Location은 항상 화면 중앙에 위치하고 Other는 화면의 좌/우에 함께 보이게 됩니다.
-	const float sideViewYaw = otherDirectionYaw + sideViewBaseYawOffset + orbitYawOffset;
-
-	return FRotator(
-		orbitPitch,
-		FRotator::NormalizeAxis(sideViewYaw),
-		0.0f);
-}
-
-float ADeathCamActor::CalculateRequiredOrbitDistance(const FRotator& viewRotation) const
-{
-	// Other가 없으면 최소 Orbit 거리만 사용합니다.
-	if (!IsValid(otherActor))
-	{
-		return orbitDistance;
-	}
-
-	const UCameraComponent* cameraComponent = GetCameraComponent();
-	if (!IsValid(cameraComponent))
-	{
-		return orbitDistance;
-	}
-
-	float aspectRatio = cameraComponent->AspectRatio;
-
-	// 실제 PIE/게임 Viewport 비율을 우선 사용합니다.
-	if (IsValid(ownerPlayerController))
-	{
-		int32 viewportSizeX = 0;
-		int32 viewportSizeY = 0;
-		ownerPlayerController->GetViewportSize(viewportSizeX, viewportSizeY);
-
-		if (viewportSizeX > 0 && viewportSizeY > 0)
-		{
-			aspectRatio = static_cast<float>(viewportSizeX) / static_cast<float>(viewportSizeY);
-		}
-	}
-
-	aspectRatio = FMath::Max(aspectRatio, 0.01f);
-	const float safeRatio = FMath::Clamp(screenSafeRatio, 0.10f, 0.98f);
-
-	const float horizontalHalfFovRadians = FMath::DegreesToRadians(cameraComponent->FieldOfView * 0.5f);
-	const float horizontalLimit = FMath::Max(FMath::Tan(horizontalHalfFovRadians) * safeRatio, 0.001f);
-	const float verticalLimit = FMath::Max((horizontalLimit / aspectRatio), 0.001f);
-
-	// 카메라는 항상 DeathLocation을 정면 중앙으로 바라봅니다.
-	// 따라서 DeathLocation -> Other 오프셋을 현재 카메라 축으로 분해하면,
-	// Other를 프레임 안에 넣기 위해 필요한 최소 후퇴 거리를 직접 계산할 수 있습니다.
-	const FVector toOther = otherActor->GetActorLocation() - deathLocation;
-	const FRotationMatrix rotationMatrix(viewRotation);
-	const FVector forward = rotationMatrix.GetUnitAxis(EAxis::X);
-	const FVector right = rotationMatrix.GetUnitAxis(EAxis::Y);
-	const FVector up = rotationMatrix.GetUnitAxis(EAxis::Z);
-
-	const float forwardOffset = FVector::DotProduct(toOther, forward);
-	const float lateralOffset = FMath::Abs(FVector::DotProduct(toOther, right));
-	const float verticalOffset = FMath::Abs(FVector::DotProduct(toOther, up));
-
-	// Camera Space에서 Other의 X(전방 깊이)는 Camera가 뒤로 빠질수록 증가합니다.
-	// |Y/X| <= HorizontalLimit, |Z/X| <= VerticalLimit를 만족하는 최소 X를 구합니다.
-	const float requiredDepthForHorizontal = lateralOffset / horizontalLimit;
-	const float requiredDepthForVertical = verticalOffset / verticalLimit;
-	const float requiredCameraSpaceDepth = FMath::Max(requiredDepthForHorizontal, requiredDepthForVertical);
-
-	// CameraSpaceDepth = CameraDistance + ForwardOffset 이므로 필요한 Distance를 역산합니다.
-	const float requiredDistance = requiredCameraSpaceDepth - forwardOffset;
-
-	// orbitDistance는 디자이너가 지정하는 최소 거리입니다.
-	// Other가 멀다고 임의의 최대 거리로 잘라 TopView를 강제하지 않습니다.
-	return FMath::Max(orbitDistance, requiredDistance);
-}
-
-void ADeathCamActor::UpdateOrbit(float deltaSeconds)
-{
-	if (!IsValid(otherActor))
-	{
-		SwitchToTopView(TEXT("OtherInvalid"));
-		return;
-	}
-
 	if (!IsValid(ownerPlayerController))
 	{
 		StopDeathCam();
 		return;
 	}
 
-	const FRotator targetRotation = CalculateOrbitTargetRotation();
-	const FRotator newRotation = FMath::RInterpConstantTo(
-		GetActorRotation(),
-		targetRotation,
-		deltaSeconds,
-		orbitRotationSpeed);
-
-	// Other가 멀어져도 곧바로 TopView로 보내지 않습니다.
-	// 먼저 DeathLocation을 중앙에 유지한 상태에서 둘을 한 화면에 담을 수 있도록 자동으로 후퇴합니다.
-	currentTargetDistance = CalculateRequiredOrbitDistance(newRotation);
-	ApplyCameraTransform(newRotation, currentTargetDistance);
-
-	// Other가 벽 뒤에 가려져 실제로 볼 수 없다면 Side View를 유지할 의미가 없으므로 Top View로 전환합니다.
-	if (!HasClearViewToOther())
-	{
-		SwitchToTopView(TEXT("VisibilityBlocked"));
-		return;
-	}
-
-	// 현재 Side View에서 Other가 DeathCam 프레임 안에 들어오면 그대로 유지합니다.
-	if (IsOtherInsideScreen())
-	{
-		return;
-	}
-
-	// Other 이동을 따라 Side View 목표 회전으로 가는 중에는 먼저 공전을 계속합니다.
-	// 목표 Side View까지 도달했는데도 Other가 프레임 밖이면 그때만 Top View로 전환합니다.
-	if (HasReachedOrbitRotation(targetRotation))
-	{
-		SwitchToTopView(TEXT("CannotFitInFrame"));
-	}
-}
-
-void ADeathCamActor::UpdateTopView(float deltaSeconds)
-{
-	// Top View에 들어간 뒤에는 Other를 따라 공전하지 않습니다.
-	// Death Location 바로 위의 고정된 목표 위치로 이동합니다.
-	currentTargetDistance = FMath::FInterpConstantTo(
-		currentTargetDistance,
-		topViewDistance,
-		deltaSeconds,
-		topViewMoveSpeed);
-
-	const FVector desiredTopViewLocation = ResolveTopViewLocation(currentTargetDistance);
-	const FVector newLocation = FMath::VInterpConstantTo(
-		GetActorLocation(),
-		desiredTopViewLocation,
-		deltaSeconds,
-		topViewMoveSpeed);
-
-	const FRotator newRotation = FMath::RInterpConstantTo(
-		GetActorRotation(),
-		topViewTargetRotation,
-		deltaSeconds,
-		topViewRotationSpeed);
-
-	SetActorLocationAndRotation(
-		newLocation,
-		newRotation,
-		false,
-		nullptr,
-		ETeleportType::TeleportPhysics);
-}
-
-void ADeathCamActor::SwitchToTopView(const TCHAR* reason)
-{
-	if (bTopView)
-	{
-		return;
-	}
-
-	bTopView = true;
-
-	UE_LOG(LogDeathCamActor, Log,
-		TEXT("SwitchToTopView Reason=%s Other=%s CameraDistance=%.1f"),
-		reason ? reason : TEXT("Unknown"),
-		*GetNameSafe(otherActor),
-		currentTargetDistance);
-
-	// Top View는 전환 순간의 Yaw만 고정해 두고 이후 Other 움직임을 따라 회전하지 않습니다.
-	topViewTargetRotation = FRotator(
-		topViewPitch,
-		FRotator::NormalizeAxis(GetActorRotation().Yaw + topViewYawOffset),
-		0.0f);
-}
-
-FVector ADeathCamActor::ResolveCameraLocation(const FRotator& viewRotation, float targetDistance) const
-{
-	const FVector desiredCameraLocation = deathLocation - (viewRotation.Vector() * targetDistance);
-
-	if (!GetWorld() || targetDistance <= KINDA_SMALL_NUMBER)
-	{
-		return desiredCameraLocation;
-	}
-
-	FCollisionQueryParams queryParams(SCENE_QUERY_STAT(DeathCamCameraCollision), false, this);
-	queryParams.AddIgnoredActor(this);
-
-	if (IsValid(deadActorToIgnore))
-	{
-		queryParams.AddIgnoredActor(deadActorToIgnore);
-	}
-
-	if (IsValid(otherActor))
-	{
-		queryParams.AddIgnoredActor(otherActor);
-	}
-
-	FHitResult hitResult;
-	const bool bHit = GetWorld()->SweepSingleByChannel(
-		hitResult,
-		deathLocation,
-		desiredCameraLocation,
-		FQuat::Identity,
-		ECC_Camera,
-		FCollisionShape::MakeSphere(cameraProbeRadius),
-		queryParams);
-
-	return bHit ? hitResult.Location : desiredCameraLocation;
-}
-
-FVector ADeathCamActor::ResolveTopViewLocation(float targetDistance) const
-{
-	const FVector desiredCameraLocation = deathLocation + (FVector::UpVector * targetDistance);
-
-	if (!GetWorld() || targetDistance <= KINDA_SMALL_NUMBER)
-	{
-		return desiredCameraLocation;
-	}
-
-	FCollisionQueryParams queryParams(SCENE_QUERY_STAT(DeathCamTopViewCollision), false, this);
-	queryParams.AddIgnoredActor(this);
-
-	if (IsValid(deadActorToIgnore))
-	{
-		queryParams.AddIgnoredActor(deadActorToIgnore);
-	}
-
-	if (IsValid(otherActor))
-	{
-		queryParams.AddIgnoredActor(otherActor);
-	}
-
-	FHitResult hitResult;
-	const bool bHit = GetWorld()->SweepSingleByChannel(
-		hitResult,
-		deathLocation,
-		desiredCameraLocation,
-		FQuat::Identity,
-		ECC_Camera,
-		FCollisionShape::MakeSphere(cameraProbeRadius),
-		queryParams);
-
-	return bHit ? hitResult.Location : desiredCameraLocation;
-}
-
-void ADeathCamActor::ApplyCameraTransform(const FRotator& viewRotation, float targetDistance)
-{
-	const FVector cameraLocation = ResolveCameraLocation(viewRotation, targetDistance);
-
-	// cameraLocation은 Death Location에서 viewRotation의 정반대 방향에 있으므로,
-	// viewRotation을 그대로 적용하면 Death Location이 정확히 카메라 정면 중앙에 놓입니다.
-	SetActorLocationAndRotation(
-		cameraLocation,
-		viewRotation,
-		false,
-		nullptr,
-		ETeleportType::TeleportPhysics);
-}
-
-bool ADeathCamActor::HasClearViewToOther() const
-{
-	if (!IsValid(otherActor) || !GetWorld())
-	{
-		return false;
-	}
-
-	FCollisionQueryParams queryParams(SCENE_QUERY_STAT(DeathCamVisibility), false, this);
-	queryParams.AddIgnoredActor(this);
-
-	if (IsValid(deadActorToIgnore))
-	{
-		queryParams.AddIgnoredActor(deadActorToIgnore);
-	}
-
-	FHitResult hitResult;
-	const bool bHit = GetWorld()->LineTraceSingleByChannel(
-		hitResult,
-		GetActorLocation(),
-		otherActor->GetActorLocation(),
-		ECC_Visibility,
-		queryParams);
-
-	return !bHit || hitResult.GetActor() == otherActor;
-}
-
-bool ADeathCamActor::IsOtherInsideScreen() const
-{
+	// 최종 기획에는 Killer가 없는 사망의 별도 연출이 정의되어 있지 않습니다.
+	// 이 경우 TopView 같은 임의 연출로 전환하지 않고 현재 위치에서 Center만 계속 바라봅니다.
 	if (!IsValid(otherActor))
 	{
-		return false;
+		SetActorRotation(CalculateLookAtCenterRotation(GetActorLocation()));
+		return;
 	}
 
-	const UCameraComponent* cameraComponent = GetCameraComponent();
-	if (!IsValid(cameraComponent))
+	const FVector killerDirection = CalculateKillerDirection();
+	const FVector desiredCameraLocation = CalculateBaseCameraLocation(killerDirection);
+
+	// 기획의 "즉시 이동하지 않고 부드럽게(Lerp) 이동"을 보간으로 처리합니다.
+	const FVector interpolatedLocation = FMath::VInterpTo(
+		GetActorLocation(),
+		desiredCameraLocation,
+		deltaSeconds,
+		cameraMoveInterpSpeed);
+
+	const FVector cameraMove = interpolatedLocation - GetActorLocation();
+	const FVector newCameraLocation = MoveCameraWithCollision(cameraMove, killerDirection);
+	const FRotator newCameraRotation = CalculateLookAtCenterRotation(newCameraLocation);
+
+	SetActorLocationAndRotation(
+		newCameraLocation,
+		newCameraRotation,
+		false,
+		nullptr,
+		ETeleportType::TeleportPhysics);
+}
+
+FVector ADeathCamActor::CalculateKillerDirection() const
+{
+	if (IsValid(otherActor))
 	{
-		return false;
-	}
-
-	// PlayerController의 이전 프레임 ViewTarget/Projection에 의존하지 않고,
-	// 현재 DeathCamActor Transform 자체를 기준으로 Other가 카메라 Frustum 안에 있는지 계산합니다.
-	const FVector cameraSpaceLocation = GetActorTransform().InverseTransformPosition(otherActor->GetActorLocation());
-
-	// Camera의 Forward(+X) 뒤쪽에 있으면 화면 안에 들어올 수 없습니다.
-	if (cameraSpaceLocation.X <= KINDA_SMALL_NUMBER)
-	{
-		return false;
-	}
-
-	float aspectRatio = cameraComponent->AspectRatio;
-
-	// 실제 PIE/게임 Viewport 비율을 얻을 수 있으면 그것을 우선합니다.
-	if (IsValid(ownerPlayerController))
-	{
-		int32 viewportSizeX = 0;
-		int32 viewportSizeY = 0;
-		ownerPlayerController->GetViewportSize(viewportSizeX, viewportSizeY);
-
-		if (viewportSizeX > 0 && viewportSizeY > 0)
+		const FVector toKiller = otherActor->GetActorLocation() - centerLocation;
+		if (!toKiller.IsNearlyZero())
 		{
-			aspectRatio = static_cast<float>(viewportSizeX) / static_cast<float>(viewportSizeY);
+			return toKiller.GetSafeNormal();
 		}
 	}
 
-	aspectRatio = FMath::Max(aspectRatio, 0.01f);
+	// Killer가 없는 사망의 연출은 기획서에서 정의되지 않았습니다.
+	// 다만 0 Vector로 인한 NaN/잘못된 Transform을 막기 위한 기술적 fallback만 둡니다.
+	if (IsValid(deadActorToIgnore))
+	{
+		const FVector fallbackDirection = deadActorToIgnore->GetActorForwardVector();
+		if (!fallbackDirection.IsNearlyZero())
+		{
+			return fallbackDirection.GetSafeNormal();
+		}
+	}
 
-	const float horizontalHalfFovRadians = FMath::DegreesToRadians(cameraComponent->FieldOfView * 0.5f);
-	const float horizontalLimit = FMath::Tan(horizontalHalfFovRadians);
-	const float verticalLimit = horizontalLimit / aspectRatio;
-
-	const float horizontalRatio = FMath::Abs(cameraSpaceLocation.Y / cameraSpaceLocation.X);
-	const float verticalRatio = FMath::Abs(cameraSpaceLocation.Z / cameraSpaceLocation.X);
-
-	return horizontalRatio <= horizontalLimit
-		&& verticalRatio <= verticalLimit;
+	return FVector::ForwardVector;
 }
 
-bool ADeathCamActor::HasReachedOrbitRotation(const FRotator& targetRotation) const
+FVector ADeathCamActor::CalculateBaseCameraLocation(const FVector& killerDirection) const
 {
-	const FRotator deltaRotation = (targetRotation - GetActorRotation()).GetNormalized();
+	// 최종 기획의 기본 위치 관계:
+	// Camera - Center - Killer가 같은 선상이며 Camera는 Killer 반대 방향입니다.
+	return centerLocation - (killerDirection * maxDistance);
+}
 
-	return FMath::Abs(deltaRotation.Pitch) <= orbitAlignmentTolerance
-		&& FMath::Abs(deltaRotation.Yaw) <= orbitAlignmentTolerance;
+FVector ADeathCamActor::ResolveInitialCameraLocation(const FVector& desiredCameraLocation) const
+{
+	if (!GetWorld() || maxDistance <= KINDA_SMALL_NUMBER)
+	{
+		return desiredCameraLocation;
+	}
+
+	FCollisionQueryParams queryParams(SCENE_QUERY_STAT(DeathCamInitialCollision), false, this);
+	queryParams.AddIgnoredActor(this);
+
+	if (IsValid(deadActorToIgnore))
+	{
+		queryParams.AddIgnoredActor(deadActorToIgnore);
+	}
+
+	if (IsValid(otherActor))
+	{
+		queryParams.AddIgnoredActor(otherActor);
+	}
+
+	FHitResult hitResult;
+	const bool bHit = GetWorld()->SweepSingleByChannel(
+		hitResult,
+		centerLocation,
+		desiredCameraLocation,
+		FQuat::Identity,
+		ECC_Camera,
+		FCollisionShape::MakeSphere(cameraProbeRadius),
+		queryParams);
+
+	if (!bHit)
+	{
+		return desiredCameraLocation;
+	}
+
+	// Sphere 중심을 충돌면에 정확히 붙여두면 첫 Tick부터 같은 면을 Time=0으로
+	// 재충돌할 수 있으므로 표면 법선 방향으로 아주 조금 떼어 둡니다.
+	const FVector hitNormal = hitResult.ImpactNormal.GetSafeNormal();
+	FVector safeLocation = hitResult.Location;
+
+	if (!hitNormal.IsNearlyZero())
+	{
+		const float pushOutDistance = hitResult.bStartPenetrating
+			? hitResult.PenetrationDepth + cameraCollisionSkin
+			: cameraCollisionSkin;
+
+		safeLocation += hitNormal * pushOutDistance;
+	}
+
+	return safeLocation;
+}
+
+FVector ADeathCamActor::MoveCameraWithCollision(
+	const FVector& cameraMove,
+	const FVector& killerDirection) const
+{
+	if (cameraMove.IsNearlyZero() || !GetWorld())
+	{
+		return ClampCameraLocation(GetActorLocation(), killerDirection);
+	}
+
+	FCollisionQueryParams queryParams(SCENE_QUERY_STAT(DeathCamSlideCollision), false, this);
+	queryParams.AddIgnoredActor(this);
+
+	if (IsValid(deadActorToIgnore))
+	{
+		queryParams.AddIgnoredActor(deadActorToIgnore);
+	}
+
+	if (IsValid(otherActor))
+	{
+		queryParams.AddIgnoredActor(otherActor);
+	}
+
+	FVector resolvedLocation = GetActorLocation();
+	FVector remainingMove = cameraMove;
+
+	// 한 번만 Slide하면 모서리에서 두 번째 면에 걸린 순간 정지하기 쉽습니다.
+	// 제한된 횟수만 반복하면서 매 충돌마다 남은 이동량의 벽 안쪽 성분을 제거합니다.
+	for (int32 iteration = 0; iteration < maxSlideIterations; ++iteration)
+	{
+		if (remainingMove.IsNearlyZero(0.01f))
+		{
+			break;
+		}
+
+		const FVector desiredLocation = resolvedLocation + remainingMove;
+
+		FHitResult hitResult;
+		const bool bHit = GetWorld()->SweepSingleByChannel(
+			hitResult,
+			resolvedLocation,
+			desiredLocation,
+			FQuat::Identity,
+			ECC_Camera,
+			FCollisionShape::MakeSphere(cameraProbeRadius),
+			queryParams);
+
+		if (!bHit)
+		{
+			resolvedLocation = desiredLocation;
+			remainingMove = FVector::ZeroVector;
+			break;
+		}
+
+		const FVector hitNormal = hitResult.ImpactNormal.GetSafeNormal();
+
+		// 먼저 실제 충돌 지점까지 이동한 뒤, 다음 Sweep이 같은 면에서 Time=0으로
+		// 다시 막히지 않도록 표면에서 아주 조금 떨어뜨립니다.
+		resolvedLocation = hitResult.Location;
+
+		if (!hitNormal.IsNearlyZero())
+		{
+			const float pushOutDistance = hitResult.bStartPenetrating
+				? hitResult.PenetrationDepth + cameraCollisionSkin
+				: cameraCollisionSkin;
+
+			resolvedLocation += hitNormal * pushOutDistance;
+		}
+
+		// 충돌하기 전 원래 이동량 중 실제로 남은 비율만 계산합니다.
+		// hitResult.Location에서 desiredLocation을 다시 빼는 방식은 위 Skin 보정량까지
+		// 이동량에 섞일 수 있으므로 Hit.Time을 기준으로 남은 양을 구합니다.
+		const float remainingFraction = 1.0f - FMath::Clamp(hitResult.Time, 0.0f, 1.0f);
+		const FVector moveAfterImpact = remainingMove * remainingFraction;
+
+		// 기획 공식:
+		// Adjusted_Move = Camera_Move - Dot(Camera_Move, HitNormal) * HitNormal
+		// FVector::VectorPlaneProject는 위 식과 동일하게 Normal 방향 성분을 제거합니다.
+		remainingMove = hitNormal.IsNearlyZero()
+			? FVector::ZeroVector
+			: FVector::VectorPlaneProject(moveAfterImpact, hitNormal);
+	}
+
+	return ClampCameraLocation(resolvedLocation, killerDirection);
+}
+
+FVector ADeathCamActor::ClampCameraLocation(
+	const FVector& candidateLocation,
+	const FVector& killerDirection) const
+{
+	FVector relativeLocation = candidateLocation - centerLocation;
+
+	// 1) Camera는 Center 기준 MaxDistance보다 멀어질 수 없습니다.
+	const float distanceFromCenter = relativeLocation.Size();
+	if (distanceFromCenter > maxDistance && distanceFromCenter > KINDA_SMALL_NUMBER)
+	{
+		relativeLocation = relativeLocation.GetSafeNormal() * maxDistance;
+	}
+
+	// 2) Camera는 Center를 넘어 Killer가 있는 방향으로 이동할 수 없습니다.
+	// Center를 통과하는 평면을 기준으로 Killer 쪽 성분이 생기면 해당 성분만 제거합니다.
+	const float killerSideAmount = FVector::DotProduct(relativeLocation, killerDirection);
+	if (killerSideAmount > 0.0f)
+	{
+		relativeLocation -= killerDirection * killerSideAmount;
+	}
+
+	return centerLocation + relativeLocation;
+}
+
+FRotator ADeathCamActor::CalculateLookAtCenterRotation(const FVector& cameraLocation) const
+{
+	const FVector toCenter = centerLocation - cameraLocation;
+
+	if (toCenter.IsNearlyZero())
+	{
+		return GetActorRotation();
+	}
+
+	return toCenter.Rotation();
+}
+
+void ADeathCamActor::ApplyKillerHighlightPostProcess()
+{
+	if (!bEnableKillerHighlight || !IsValid(killerHighlightMaterial))
+	{
+		if (bEnableKillerHighlight && !IsValid(killerHighlightMaterial))
+		{
+			UE_LOG(LogDeathCamActor, Warning,
+				TEXT("Killer Highlight is enabled, but killerHighlightMaterial is not assigned in DeathCamDataAsset."));
+		}
+		return;
+	}
+
+	UCameraComponent* cameraComponent = GetCameraComponent();
+	if (!IsValid(cameraComponent))
+	{
+		UE_LOG(LogDeathCamActor, Warning, TEXT("Killer Highlight Post Process was not applied: CameraComponent is invalid."));
+		return;
+	}
+
+	// ACameraActor가 소유한 이 카메라에만 Blendable을 추가합니다.
+	// 레벨의 PostProcessVolume이나 PlayerController 수정은 필요하지 않습니다.
+	cameraComponent->PostProcessSettings.AddBlendable(killerHighlightMaterial, 1.0f);
+	cameraComponent->PostProcessBlendWeight = 1.0f;
+}
+
+void ADeathCamActor::ApplyKillerHighlight()
+{
+	RemoveKillerHighlight();
+
+	if (!bEnableKillerHighlight || !IsValid(otherActor))
+	{
+		return;
+	}
+
+	TInlineComponentArray<UPrimitiveComponent*> primitiveComponents;
+	otherActor->GetComponents(primitiveComponents);
+	killerHighlightStates.Reserve(primitiveComponents.Num());
+
+	for (UPrimitiveComponent* primitiveComponent : primitiveComponents)
+	{
+		if (!IsValid(primitiveComponent))
+		{
+			continue;
+		}
+
+		FHighlightComponentState& state = killerHighlightStates.AddDefaulted_GetRef();
+		state.component = primitiveComponent;
+		state.bRenderCustomDepth = primitiveComponent->bRenderCustomDepth;
+		state.customDepthStencilValue = primitiveComponent->CustomDepthStencilValue;
+
+		// CustomDepth/Stencil을 활성화해 벽 뒤에서도 판별 가능한 Highlight 정보를 제공합니다.
+		// 실제 "붉은색" 표현은 프로젝트의 Post Process Material이 이 Stencil 값을 해석해야 합니다.
+		primitiveComponent->SetRenderCustomDepth(true);
+		primitiveComponent->SetCustomDepthStencilValue(killerHighlightStencilValue);
+	}
+}
+
+void ADeathCamActor::RemoveKillerHighlight()
+{
+	for (const FHighlightComponentState& state : killerHighlightStates)
+	{
+		UPrimitiveComponent* primitiveComponent = state.component.Get();
+		if (!IsValid(primitiveComponent))
+		{
+			continue;
+		}
+
+		primitiveComponent->SetRenderCustomDepth(state.bRenderCustomDepth);
+		primitiveComponent->SetCustomDepthStencilValue(state.customDepthStencilValue);
+	}
+
+	killerHighlightStates.Reset();
 }

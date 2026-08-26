@@ -159,7 +159,12 @@ AActor* UDeathCamComponent::ResolveOtherActor(
 	AController* instigatedBy,
 	AActor* damageCauser) const
 {
-	// 1순위: InstigatedBy가 제어하는 Pawn.
+	// 최종 기획에서 OtherActor는 사실상 Killer입니다.
+	// PlayerController BP를 지금 수정하지 않아도 테스트할 수 있도록
+	// 가능한 경우 C++ 안에서 Killer Pawn까지 복구합니다.
+
+	// 1순위: OnDeath의 InstigatedBy가 제어하는 Pawn.
+	// 나중에 PlayerController에서 InstigatedBy 핀을 연결하면 이 경로가 가장 정확합니다.
 	if (IsValid(instigatedBy))
 	{
 		APawn* instigatorPawn = instigatedBy->GetPawn();
@@ -169,13 +174,41 @@ AActor* UDeathCamComponent::ResolveOtherActor(
 		}
 	}
 
-	// 2순위: Controller Pawn을 얻지 못한 경우 DamageCauser.
-	if (IsValid(damageCauser) && damageCauser != deadPawn)
+	if (!IsValid(damageCauser) || damageCauser == deadPawn)
 	{
-		return damageCauser;
+		return nullptr;
 	}
 
-	return nullptr;
+	// 2순위: Projectile/Weapon 등이 DamageCauser인 경우 Actor의 Instigator Pawn을 우선 사용합니다.
+	// 현재 PlayerController에서 InstigatedBy 핀이 비어 있어도 일반적인 Projectile 구조라면
+	// 이 경로를 통해 실제 Killer Pawn을 찾을 수 있습니다.
+	APawn* damageInstigatorPawn = damageCauser->GetInstigator();
+	if (IsValid(damageInstigatorPawn) && damageInstigatorPawn != deadPawn)
+	{
+		return damageInstigatorPawn;
+	}
+
+	// 3순위: DamageCauser Owner가 Pawn 또는 Controller인 경우도 확인합니다.
+	AActor* damageOwner = damageCauser->GetOwner();
+	if (APawn* ownerPawn = Cast<APawn>(damageOwner))
+	{
+		if (ownerPawn != deadPawn)
+		{
+			return ownerPawn;
+		}
+	}
+
+	if (AController* ownerController = Cast<AController>(damageOwner))
+	{
+		APawn* ownerControllerPawn = ownerController->GetPawn();
+		if (IsValid(ownerControllerPawn) && ownerControllerPawn != deadPawn)
+		{
+			return ownerControllerPawn;
+		}
+	}
+
+	// 마지막 fallback: Killer Pawn까지 복구할 수 없는 경우 기존처럼 DamageCauser 자체를 사용합니다.
+	return damageCauser;
 }
 
 void UDeathCamComponent::StartDeathCamLocal(
