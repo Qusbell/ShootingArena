@@ -35,8 +35,8 @@ bool ULocalDedicatedServerLibrary::StartLocalDedicatedServer(const FString& MapN
 		*ServerExePath,
 		*Params,
 		true,	// bLaunchDetached: 부모(클라이언트) 프로세스와 독립적으로 실행 (StopLocalDedicatedServer가 종료를 책임짐)
-		true,	// bLaunchHidden: 콘솔 창 숨김
-		true,	// bLaunchReallyHidden: 태스크바에도 표시하지 않음
+		false,	// bLaunchHidden: 디버깅을 위해 창을 보이게 함
+		false,	// bLaunchReallyHidden: 작업표시줄에도 표시
 		&OutProcessID,
 		0,
 		nullptr,
