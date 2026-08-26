@@ -1,0 +1,66 @@
+#include "LocalDedicatedServerLibrary.h"
+#include "HAL/PlatformProcess.h"
+#include "Misc/Paths.h"
+
+namespace
+{
+	// 실행 중인 로컬 전용 서버 프로세스 핸들. 캠페인 세션 동안 한 번에 하나만 존재한다고 가정합니다.
+	FProcHandle GLocalDedicatedServerHandle;
+}
+
+bool ULocalDedicatedServerLibrary::StartLocalDedicatedServer(const FString& MapName, int32 Port)
+{
+	if (IsLocalDedicatedServerRunning())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[LocalDedicatedServer] 이미 실행 중인 로컬 전용 서버가 있어 새로 시작하지 않습니다."));
+		return false;
+	}
+
+	// 정식 Server 타겟(ShootingArenaServer.exe)은 런처 설치 엔진에서 빌드가 막혀있어서,
+	// 대신 에디터 실행 파일을 -game -server 옵션으로 띄워 로컬 전용 서버 대용으로 사용합니다.
+	// (쿠킹/패키징 없이 원본 에셋을 그대로 읽어서 동작합니다.)
+	const FString ServerExePath = FPaths::Combine(FPaths::EngineDir(), TEXT("Binaries"), TEXT("Win64"), TEXT("UnrealEditor.exe"));
+
+	if (!FPaths::FileExists(ServerExePath))
+	{
+		UE_LOG(LogTemp, Error, TEXT("[LocalDedicatedServer] 서버 실행 파일을 찾을 수 없습니다: %s"), *ServerExePath);
+		return false;
+	}
+
+	const FString ProjectFilePath = FPaths::ConvertRelativePathToFull(FPaths::GetProjectFilePath());
+	const FString Params = FString::Printf(TEXT("\"%s\" %s -game -server -log -port=%d"), *ProjectFilePath, *MapName, Port);
+
+	uint32 OutProcessID = 0;
+	GLocalDedicatedServerHandle = FPlatformProcess::CreateProc(
+		*ServerExePath,
+		*Params,
+		true,	// bLaunchDetached: 부모(클라이언트) 프로세스와 독립적으로 실행 (StopLocalDedicatedServer가 종료를 책임짐)
+		false,	// bLaunchHidden: 디버깅을 위해 창을 보이게 함
+		false,	// bLaunchReallyHidden: 작업표시줄에도 표시
+		&OutProcessID,
+		0,
+		nullptr,
+		nullptr);
+
+	if (!GLocalDedicatedServerHandle.IsValid())
+	{
+		UE_LOG(LogTemp, Error, TEXT("[LocalDedicatedServer] 서버 프로세스 실행에 실패했습니다: %s %s"), *ServerExePath, *Params);
+	}
+
+	return GLocalDedicatedServerHandle.IsValid();
+}
+
+void ULocalDedicatedServerLibrary::StopLocalDedicatedServer()
+{
+	if (GLocalDedicatedServerHandle.IsValid())
+	{
+		FPlatformProcess::TerminateProc(GLocalDedicatedServerHandle, true);
+		FPlatformProcess::CloseProc(GLocalDedicatedServerHandle);
+		GLocalDedicatedServerHandle.Reset();
+	}
+}
+
+bool ULocalDedicatedServerLibrary::IsLocalDedicatedServerRunning()
+{
+	return GLocalDedicatedServerHandle.IsValid() && FPlatformProcess::IsProcRunning(GLocalDedicatedServerHandle);
+}
