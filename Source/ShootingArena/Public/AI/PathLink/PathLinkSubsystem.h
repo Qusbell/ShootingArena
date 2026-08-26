@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Subsystems/WorldSubsystem.h"
@@ -33,11 +33,11 @@ public:
     UFUNCTION(BlueprintPure, Category = "AI|PathLink")
     TArray<APathLink*> GetAllLinks() const;
 
-    /** 현재 Enabled + 구조 Validation을 통과한 Link를 반환합니다. Client에서도 정상 배치 Link를 동일하게 조회할 수 있습니다. */
+    /** 현재 ExitActor가 있고 Enabled + 구조 Validation을 통과한 실제 Route Link만 반환합니다. Exit Marker 전용 PathLink는 제외됩니다. */
     UFUNCTION(BlueprintPure, Category = "AI|PathLink")
     TArray<APathLink*> GetEnabledLinks() const;
 
-    /** 현재 Registry에서 Validation에 실패한 Link만 반환합니다. Enabled 여부와는 무관합니다. */
+    /** 현재 Registry에서 Validation에 실패한 Link만 반환합니다. ExitActor가 없는 Marker 전용 PathLink는 Invalid로 보지 않습니다. */
     UFUNCTION(BlueprintPure, Category = "AI|PathLink|Validation")
     TArray<APathLink*> GetInvalidLinks() const;
 
@@ -48,7 +48,7 @@ public:
     UFUNCTION(BlueprintCallable, Category = "AI|PathLink|Validation")
     bool ValidateAllLinks(int32& OutValidCount, int32& OutInvalidCount) const;
 
-    /** 지정한 Type의 등록된 Link를 반환합니다. */
+    /** 지정한 Type의 실제 Route Link를 반환합니다. ExitActor가 없는 Marker 전용 PathLink는 제외됩니다. */
     UFUNCTION(BlueprintPure, Category = "AI|PathLink")
     TArray<APathLink*> GetLinksByType(EPathLinkType LinkType, bool OnlyEnabled = true) const;
 
@@ -56,7 +56,7 @@ public:
     UFUNCTION(BlueprintPure, Category = "AI|PathLink")
     int32 GetLinkCount() const;
 
-    /** 위치에서 가장 가까운 Link를 반환합니다. Entry/Exit 중 가까운 쪽을 기준으로 계산합니다. */
+    /** 위치에서 가장 가까운 실제 Route Link를 반환합니다. ExitActor가 없는 Marker는 제외하고 Entry/Exit 중 가까운 쪽을 기준으로 계산합니다. */
     UFUNCTION(BlueprintPure, Category = "AI|PathLink")
     APathLink* GetNearestLink(const FVector& Location, bool OnlyEnabled = true) const;
 
@@ -134,11 +134,27 @@ public:
 
 private:
     /**
-     * 실제 서버/Standalone Route 계산에 사용할 수 있는 Link만 반환합니다.
-     * Enabled + 구조 Validation + 현재 NavMesh Endpoint Projection을 모두 통과해야 합니다.
-     * Client World에서는 빈 배열을 반환합니다.
+     * Link 등록/해제 또는 Refresh가 발생했을 때 정적 Route Cache를 무효화합니다.
+     * 다음 Route 요청에서 Link 구조 Validation과 Link -> Link NavMesh 거리를 다시 구축합니다.
      */
-    TArray<APathLink*> GetUsableLinksForNavigation() const;
+    void InvalidateRouteGraphCache();
+
+    /**
+     * 등록 Link의 구조 Validation/중복 검사를 한 번만 수행하고 Route 후보 Link를 캐시합니다.
+     * 반복 FindShortestRoute에서 Ground Trace / Duplicate Scan 등을 다시 수행하지 않게 합니다.
+     */
+    void RebuildCommonRouteCache() const;
+
+    /**
+     * PathfindingContext별 Link -> Link 정적 Graph를 반환합니다.
+     * nullptr Context는 World 시작 시 미리 구축하고, 개별 Context는 최초 요청 시 한 번 구축한 뒤 재사용합니다.
+     */
+    bool EnsureRouteGraphCache(
+        AActor* PathfindingContext,
+        const FPathLinkStaticGraph*& OutGraph) const;
+
+    /** Common Cache에 저장된 Route 후보 WeakPtr를 유효한 Raw Pointer 배열로 변환합니다. */
+    TArray<APathLink*> GetCachedRouteLinks() const;
 
     /**
      * 중복 배치된 PathLink가 하나라도 있는지 검사합니다.
@@ -150,6 +166,29 @@ private:
     /** PIE/SIE에서 중복 Link를 발견했을 때 팝업을 띄우고 실행을 즉시 종료합니다. */
     void BlockEditorPlayForDuplicates(const FString& Summary) const;
 #endif
+
+    /** Link 등록 상태가 바뀐 뒤 Common/Static Graph Cache를 다시 만들어야 하는지 나타냅니다. */
+    mutable bool bRouteGraphCacheDirty = true;
+
+    /** 구조 Validation과 전체 Duplicate Scan을 완료한 상태인지 나타냅니다. */
+    mutable bool bCommonRouteCacheReady = false;
+
+    /** Common Cache 구축 시 확인한 Blocking Duplicate 상태입니다. */
+    mutable bool bCachedHasBlockingDuplicates = false;
+    mutable FString CachedDuplicateSummary;
+
+    /** Enabled + 구조 Validation을 통과한 Link입니다. Navigation Projection은 Context별 Graph Build에서 검사합니다. */
+    mutable TArray<TWeakObjectPtr<APathLink>> CachedRouteLinks;
+
+    /** PathfindingContext가 없는 기본 Link -> Link Graph입니다. */
+    mutable bool bDefaultRouteGraphReady = false;
+    mutable FPathLinkStaticGraph DefaultRouteGraph;
+
+    /**
+     * Context에 따라 Nav Agent/NavData가 달라질 가능성을 보존하기 위해 Actor Context별 Graph를 따로 캐시합니다.
+     * 같은 AI가 Route를 반복 요청하면 Link -> Link NavMesh Query는 최초 1회만 발생합니다.
+     */
+    mutable TMap<TWeakObjectPtr<AActor>, FPathLinkStaticGraph> ContextRouteGraphs;
 
     /** WeakPtr로 보관해 Level Streaming / World Partition Unload 시 Actor 수명을 붙잡지 않습니다. */
     TArray<TWeakObjectPtr<APathLink>> RegisteredLinks;

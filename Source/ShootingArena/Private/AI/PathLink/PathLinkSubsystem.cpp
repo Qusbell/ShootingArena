@@ -1,4 +1,4 @@
-﻿#include "AI/PathLink/PathLinkSubsystem.h"
+#include "AI/PathLink/PathLinkSubsystem.h"
 
 #include "AI/PathLink/PathLink.h"
 #include "AI/PathLink/Internal/PathLinkRouteFinder.h"
@@ -19,11 +19,20 @@ void UPathLinkSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
     Super::Initialize(Collection);
     RegisteredLinks.Reset();
+    InvalidateRouteGraphCache();
 }
 
 void UPathLinkSubsystem::Deinitialize()
 {
     RegisteredLinks.Reset();
+    CachedRouteLinks.Reset();
+    DefaultRouteGraph.Reset();
+    ContextRouteGraphs.Reset();
+    bRouteGraphCacheDirty = true;
+    bCommonRouteCacheReady = false;
+    bDefaultRouteGraphReady = false;
+    bCachedHasBlockingDuplicates = false;
+    CachedDuplicateSummary.Reset();
     Super::Deinitialize();
 }
 
@@ -35,30 +44,46 @@ void UPathLinkSubsystem::OnWorldBeginPlay(UWorld& InWorld)
     // 이후 Streaming으로 새로 들어오는 Link는 각 APathLink::BeginPlay에서 자동 등록됩니다.
     RefreshLinks();
 
-    // 중복 배치는 레벨 디자이너가 놓치기 쉬운 치명적인 배치 실수이므로
-    // 단순 로그/자동 제외로 넘기지 않고 PIE/SIE 실행 자체를 즉시 중단합니다.
-    TArray<APathLink*> DuplicateLinks;
-    FString DuplicateSummary;
-    if (HasBlockingDuplicateLinks(DuplicateLinks, DuplicateSummary))
+    // 구조 Validation / Duplicate Scan은 여기서 Common Cache에 한 번 저장합니다.
+    // 반복 Route 요청에서는 같은 Ground Trace / Duplicate Scan을 다시 수행하지 않습니다.
+    RebuildCommonRouteCache();
+
+    if (bCachedHasBlockingDuplicates)
     {
         UE_LOG(
             LogPathLinkSubsystem,
             Error,
             TEXT("[PathLink][BLOCKED][DuplicatePlacement] 중복 PathLink가 발견되어 PathLink 시스템 실행을 차단합니다.\n%s"),
-            *DuplicateSummary);
+            *CachedDuplicateSummary);
 
 #if WITH_EDITOR
         if (InWorld.WorldType == EWorldType::PIE)
         {
-            BlockEditorPlayForDuplicates(DuplicateSummary);
+            BlockEditorPlayForDuplicates(CachedDuplicateSummary);
         }
 #endif
+        return;
+    }
+
+    // 기본 Context(nullptr)는 World 시작 시 Link -> Link Graph를 미리 계산합니다.
+    // NavMesh가 아직 준비되지 않았다면 실패 상태를 캐시하지 않고 첫 Route 요청에서 다시 시도합니다.
+    if (InWorld.GetNetMode() != NM_Client)
+    {
+        const FPathLinkStaticGraph* PrewarmedGraph = nullptr;
+        if (!EnsureRouteGraphCache(nullptr, PrewarmedGraph))
+        {
+            UE_LOG(
+                LogPathLinkSubsystem,
+                Warning,
+                TEXT("[PathLink][RouteCache] World BeginPlay 사전 구축을 완료하지 못했습니다. 첫 Route 요청에서 다시 시도합니다."));
+        }
     }
 }
 
 void UPathLinkSubsystem::RefreshLinks()
 {
     RegisteredLinks.Reset();
+    InvalidateRouteGraphCache();
 
     UWorld* World = GetWorld();
     if (!IsValid(World))
@@ -75,6 +100,7 @@ void UPathLinkSubsystem::RefreshLinks()
     int32 InvalidCount = 0;
     int32 EnabledCount = 0;
     int32 DisabledCount = 0;
+    int32 MarkerCount = 0;
 
     for (const TWeakObjectPtr<APathLink>& WeakLink : RegisteredLinks)
     {
@@ -84,30 +110,38 @@ void UPathLinkSubsystem::RefreshLinks()
             continue;
         }
 
-        if (Link->IsValidLink())
+        if (!Link->IsValidLink())
         {
-            ++ValidCount;
-            if (Link->IsEnabled())
-            {
-                ++EnabledCount;
-            }
-            else
-            {
-                ++DisabledCount;
-            }
+            ++InvalidCount;
+            continue;
+        }
+
+        // ExitActor가 없는 PathLink는 다른 Link의 Exit 위치를 표시하는 Marker로만 취급합니다.
+        // Enabled 값과 무관하게 실제 Route 후보/Enabled Link 개수에는 포함하지 않습니다.
+        if (!IsValid(Link->GetExitActor()))
+        {
+            ++MarkerCount;
+            continue;
+        }
+
+        ++ValidCount;
+        if (Link->IsEnabled())
+        {
+            ++EnabledCount;
         }
         else
         {
-            ++InvalidCount;
+            ++DisabledCount;
         }
     }
 
     UE_LOG(
         LogPathLinkSubsystem,
         Log,
-        TEXT("[PathLink][Registry] Refresh 완료 | Total=%d | Valid=%d | Invalid=%d | Enabled=%d | Disabled=%d"),
+        TEXT("[PathLink][Registry] Refresh 완료 | Total=%d | RouteLinks=%d | Markers=%d | Invalid=%d | Enabled=%d | Disabled=%d"),
         RegisteredLinks.Num(),
         ValidCount,
+        MarkerCount,
         InvalidCount,
         EnabledCount,
         DisabledCount);
@@ -145,34 +179,6 @@ TArray<APathLink*> UPathLinkSubsystem::GetEnabledLinks() const
     return Result;
 }
 
-TArray<APathLink*> UPathLinkSubsystem::GetUsableLinksForNavigation() const
-{
-    TArray<APathLink*> Result;
-
-    UWorld* World = GetWorld();
-    if (!IsValid(World) || World->GetNetMode() == NM_Client)
-    {
-        return Result;
-    }
-
-    for (const TWeakObjectPtr<APathLink>& WeakLink : RegisteredLinks)
-    {
-        APathLink* Link = WeakLink.Get();
-        if (!IsValid(Link) || !Link->IsUsable())
-        {
-            continue;
-        }
-
-        if (!Link->CanUseForNavigation())
-        {
-            continue;
-        }
-
-        Result.Add(Link);
-    }
-
-    return Result;
-}
 
 TArray<APathLink*> UPathLinkSubsystem::GetInvalidLinks() const
 {
@@ -234,7 +240,9 @@ TArray<APathLink*> UPathLinkSubsystem::GetLinksByType(
     for (const TWeakObjectPtr<APathLink>& WeakLink : RegisteredLinks)
     {
         APathLink* Link = WeakLink.Get();
-        if (!IsValid(Link) || Link->GetLinkType() != LinkType)
+        if (!IsValid(Link)
+            || !IsValid(Link->GetExitActor())
+            || Link->GetLinkType() != LinkType)
         {
             continue;
         }
@@ -274,7 +282,7 @@ APathLink* UPathLinkSubsystem::GetNearestLink(
     for (const TWeakObjectPtr<APathLink>& WeakLink : RegisteredLinks)
     {
         APathLink* Link = WeakLink.Get();
-        if (!IsValid(Link))
+        if (!IsValid(Link) || !IsValid(Link->GetExitActor()))
         {
             continue;
         }
@@ -475,29 +483,30 @@ bool UPathLinkSubsystem::FindShortestRoute(
         return false;
     }
 
-    // 중복 배치가 하나라도 남아 있으면 일부 Link만 조용히 제외하고 계속 진행하지 않습니다.
-    // 잘못된 레벨 배치를 수정하기 전까지 PathLink Route 계산 자체를 실패시킵니다.
-    TArray<APathLink*> DuplicateLinks;
-    FString DuplicateSummary;
-    if (HasBlockingDuplicateLinks(DuplicateLinks, DuplicateSummary))
+    const FPathLinkStaticGraph* RouteGraph = nullptr;
+    if (!EnsureRouteGraphCache(PathfindingContext, RouteGraph))
     {
-        UE_LOG(
-            LogPathLinkSubsystem,
-            Error,
-            TEXT("[PathLink][BLOCKED][DuplicatePlacement] FindShortestRoute 실행 차단 | 중복 Link를 먼저 수정하세요.\n%s"),
-            *DuplicateSummary);
+        if (bCachedHasBlockingDuplicates)
+        {
+            UE_LOG(
+                LogPathLinkSubsystem,
+                Error,
+                TEXT("[PathLink][BLOCKED][DuplicatePlacement] FindShortestRoute 실행 차단 | 중복 Link를 먼저 수정하세요.\n%s"),
+                *CachedDuplicateSummary);
+        }
         return false;
     }
 
-    // 외부 조회용 GetEnabledLinks는 구조적으로 정상인 Enabled Link를 반환합니다.
-    // 실제 Route 계산에서는 현재 서버 NavMesh에서도 사용할 수 있는 Link만 별도로 필터링합니다.
-    const TArray<APathLink*> UsableLinks = GetUsableLinksForNavigation();
+    if (!RouteGraph)
+    {
+        return false;
+    }
 
     FPathLinkRouteFinder RouteFinder(World);
     return RouteFinder.FindShortestRoute(
         StartLocation,
         TargetLocation,
-        UsableLinks,
+        *RouteGraph,
         PathfindingContext,
         OutResult);
 }
@@ -546,6 +555,146 @@ bool UPathLinkSubsystem::CanReach(
 {
     FPathLinkRouteResult RouteResult;
     return FindShortestRoute(StartLocation, TargetLocation, RouteResult, PathfindingContext);
+}
+
+void UPathLinkSubsystem::InvalidateRouteGraphCache()
+{
+    bRouteGraphCacheDirty = true;
+    bCommonRouteCacheReady = false;
+    bDefaultRouteGraphReady = false;
+    bCachedHasBlockingDuplicates = false;
+    CachedDuplicateSummary.Reset();
+    CachedRouteLinks.Reset();
+    DefaultRouteGraph.Reset();
+    ContextRouteGraphs.Reset();
+}
+
+void UPathLinkSubsystem::RebuildCommonRouteCache() const
+{
+    CachedRouteLinks.Reset();
+    DefaultRouteGraph.Reset();
+    ContextRouteGraphs.Reset();
+    bDefaultRouteGraphReady = false;
+    bCachedHasBlockingDuplicates = false;
+    CachedDuplicateSummary.Reset();
+
+    TArray<APathLink*> DuplicateLinks;
+    bCachedHasBlockingDuplicates = HasBlockingDuplicateLinks(DuplicateLinks, CachedDuplicateSummary);
+
+    // Duplicate는 전체 Route를 차단하므로 개별 Link Validation에서 다시 O(L) 검색할 필요가 없습니다.
+    // 여기서는 Duplicate를 제외한 구조 Validation만 Link당 한 번 수행합니다.
+    for (const TWeakObjectPtr<APathLink>& WeakLink : RegisteredLinks)
+    {
+        APathLink* Link = WeakLink.Get();
+        if (!IsValid(Link) || !Link->IsEnabled())
+        {
+            continue;
+        }
+
+        if (!Link->IsValidLinkForRouteCache())
+        {
+            continue;
+        }
+
+        CachedRouteLinks.Add(Link);
+    }
+
+    bRouteGraphCacheDirty = false;
+    bCommonRouteCacheReady = true;
+
+    UE_LOG(
+        LogPathLinkSubsystem,
+        Log,
+        TEXT("[PathLink][RouteCache] Common Cache 구축 | Registered=%d | RouteCandidates=%d | DuplicateBlocked=%s"),
+        RegisteredLinks.Num(),
+        CachedRouteLinks.Num(),
+        bCachedHasBlockingDuplicates ? TEXT("true") : TEXT("false"));
+}
+
+TArray<APathLink*> UPathLinkSubsystem::GetCachedRouteLinks() const
+{
+    TArray<APathLink*> Result;
+    Result.Reserve(CachedRouteLinks.Num());
+
+    for (const TWeakObjectPtr<APathLink>& WeakLink : CachedRouteLinks)
+    {
+        if (APathLink* Link = WeakLink.Get(); IsValid(Link))
+        {
+            Result.Add(Link);
+        }
+    }
+
+    return Result;
+}
+
+bool UPathLinkSubsystem::EnsureRouteGraphCache(
+    AActor* PathfindingContext,
+    const FPathLinkStaticGraph*& OutGraph) const
+{
+    OutGraph = nullptr;
+
+    UWorld* World = GetWorld();
+    if (!IsValid(World) || World->GetNetMode() == NM_Client)
+    {
+        return false;
+    }
+
+    if (bRouteGraphCacheDirty || !bCommonRouteCacheReady)
+    {
+        RebuildCommonRouteCache();
+    }
+
+    if (bCachedHasBlockingDuplicates)
+    {
+        return false;
+    }
+
+    const TArray<APathLink*> RouteLinks = GetCachedRouteLinks();
+    FPathLinkRouteFinder RouteFinder(World);
+
+    if (!IsValid(PathfindingContext))
+    {
+        if (!bDefaultRouteGraphReady)
+        {
+            FPathLinkStaticGraph NewGraph;
+            if (!RouteFinder.BuildStaticGraph(RouteLinks, nullptr, NewGraph))
+            {
+                return false;
+            }
+
+            DefaultRouteGraph = MoveTemp(NewGraph);
+            bDefaultRouteGraphReady = true;
+        }
+
+        OutGraph = &DefaultRouteGraph;
+        return true;
+    }
+
+    // 파괴된 AI Context Cache는 가볍게 정리합니다.
+    for (auto It = ContextRouteGraphs.CreateIterator(); It; ++It)
+    {
+        if (!It.Key().IsValid())
+        {
+            It.RemoveCurrent();
+        }
+    }
+
+    const TWeakObjectPtr<AActor> ContextKey(PathfindingContext);
+    if (FPathLinkStaticGraph* ExistingGraph = ContextRouteGraphs.Find(ContextKey))
+    {
+        OutGraph = ExistingGraph;
+        return true;
+    }
+
+    FPathLinkStaticGraph NewGraph;
+    if (!RouteFinder.BuildStaticGraph(RouteLinks, PathfindingContext, NewGraph))
+    {
+        return false;
+    }
+
+    FPathLinkStaticGraph& StoredGraph = ContextRouteGraphs.Add(ContextKey, MoveTemp(NewGraph));
+    OutGraph = &StoredGraph;
+    return true;
 }
 
 bool UPathLinkSubsystem::HasBlockingDuplicateLinks(
@@ -637,6 +786,7 @@ void UPathLinkSubsystem::RegisterLink(APathLink* Link)
     if (!AlreadyRegistered)
     {
         RegisteredLinks.Add(Link);
+        InvalidateRouteGraphCache();
 
         // 일반 구조 Invalid Link는 Registry에는 남겨 디버깅/조회할 수 있게 하되
         // IsUsable()에 의해 활성 Link 조회에서 제외됩니다. 실제 NavMesh 사용 가능 여부는 Route 계산 시 별도로 검사합니다.
@@ -648,9 +798,14 @@ void UPathLinkSubsystem::RegisterLink(APathLink* Link)
 
 void UPathLinkSubsystem::UnregisterLink(APathLink* Link)
 {
-    RegisteredLinks.RemoveAll(
+    const int32 RemovedCount = RegisteredLinks.RemoveAll(
         [Link](const TWeakObjectPtr<APathLink>& WeakLink)
         {
             return !WeakLink.IsValid() || WeakLink.Get() == Link;
         });
+
+    if (RemovedCount > 0)
+    {
+        InvalidateRouteGraphCache();
+    }
 }

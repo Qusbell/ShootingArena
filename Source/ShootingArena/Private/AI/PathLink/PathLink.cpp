@@ -1,4 +1,4 @@
-﻿#include "AI/PathLink/PathLink.h"
+#include "AI/PathLink/PathLink.h"
 
 #include "AI/PathLink/PathLinkSubsystem.h"
 #include "Components/SceneComponent.h"
@@ -15,11 +15,6 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogPathLink, Log, All);
 
-namespace PathLinkComponentNames
-{
-    static const FName ExitDirection(TEXT("ExitDirection"));
-}
-
 namespace PathLinkPlacement
 {
     constexpr float GroundTraceStartHeight = 50.0f;
@@ -30,40 +25,6 @@ namespace PathLinkPlacement
 
 namespace
 {
-    /**
-     * 기존 BP를 수정하지 않기 위해 Actor가 가진 SceneComponent를 이름으로 조회합니다.
-     * Blueprint가 생성한 Component 이름에 접미사가 붙는 경우를 고려해 Contains도 함께 검사합니다.
-     */
-    USceneComponent* FindSceneComponentByName(const AActor* Actor, const FName PreferredName)
-    {
-        if (!IsValid(Actor))
-        {
-            return nullptr;
-        }
-
-        TInlineComponentArray<USceneComponent*> Components;
-        Actor->GetComponents(Components);
-
-        for (USceneComponent* Component : Components)
-        {
-            if (IsValid(Component) && Component->GetFName() == PreferredName)
-            {
-                return Component;
-            }
-        }
-
-        const FString PreferredString = PreferredName.ToString();
-        for (USceneComponent* Component : Components)
-        {
-            if (IsValid(Component) && Component->GetName().Contains(PreferredString))
-            {
-                return Component;
-            }
-        }
-
-        return nullptr;
-    }
-
     FVector AddLocalOffset(const AActor* Actor, const FVector& BaseLocation, const FVector& LocalOffset)
     {
         if (!IsValid(Actor) || LocalOffset.IsNearlyZero())
@@ -233,14 +194,28 @@ void APathLink::AttachToGround()
 bool APathLink::IsValidLink() const
 {
     TArray<FString> Errors;
-    CollectValidationErrors(Errors);
+    CollectValidationErrors(Errors, true);
+    return Errors.IsEmpty();
+}
+
+bool APathLink::IsValidLinkForRouteCache() const
+{
+    // ExitActor가 없는 PathLink는 다른 Link의 Exit Marker로는 사용할 수 있지만
+    // 자기 자신이 이동 Link가 되는 것은 아니므로 Route Cache 후보에서 제외합니다.
+    if (!IsValid(ExitActor))
+    {
+        return false;
+    }
+
+    TArray<FString> Errors;
+    CollectValidationErrors(Errors, false);
     return Errors.IsEmpty();
 }
 
 bool APathLink::ValidateLink(FText& OutFailureReason) const
 {
     TArray<FString> Errors;
-    CollectValidationErrors(Errors);
+    CollectValidationErrors(Errors, true);
 
     if (Errors.IsEmpty())
     {
@@ -255,7 +230,7 @@ bool APathLink::ValidateLink(FText& OutFailureReason) const
 bool APathLink::ValidateAndLog() const
 {
     TArray<FString> Errors;
-    CollectValidationErrors(Errors);
+    CollectValidationErrors(Errors, true);
 
     // 구조가 정상일 때만 Navigation 상태를 추가 검사합니다.
     // Client World는 AI Route 계산 주체가 아니며 NavData가 없을 수 있으므로 Navigation 오류로 취급하지 않습니다.
@@ -273,6 +248,17 @@ bool APathLink::ValidateAndLog() const
 
     if (Errors.IsEmpty())
     {
+        if (!IsValid(ExitActor))
+        {
+            UE_LOG(
+                LogPathLink,
+                Log,
+                TEXT("[PathLink][MARKER] Link=%s | Entry=Self(%s) | ExitActor=None | RouteCandidate=false"),
+                *GetName(),
+                *GetActorLocation().ToCompactString());
+            return true;
+        }
+
         UE_LOG(
             LogPathLink,
             Log,
@@ -313,7 +299,7 @@ void APathLink::ValidateInEditor()
 bool APathLink::LogValidationErrors() const
 {
     TArray<FString> Errors;
-    CollectValidationErrors(Errors);
+    CollectValidationErrors(Errors, true);
 
     if (Errors.IsEmpty())
     {
@@ -372,7 +358,7 @@ bool APathLink::HasDuplicatePlacementError(FString& OutDetails) const
     return true;
 }
 
-void APathLink::CollectValidationErrors(TArray<FString>& OutErrors) const
+void APathLink::CollectValidationErrors(TArray<FString>& OutErrors, const bool bIncludeDuplicatePlacement) const
 {
     OutErrors.Reset();
 
@@ -400,7 +386,8 @@ void APathLink::CollectValidationErrors(TArray<FString>& OutErrors) const
 
     if (!IsValid(ExitActor))
     {
-        OutErrors.Add(TEXT("[ExitActor] ExitActor가 지정되지 않았거나 유효하지 않습니다."));
+        // ExitActor가 없는 PathLink는 "이동 Link"가 아니라 위치 Marker로 취급합니다.
+        // 다른 PathLink의 ExitActor로 참조할 수 있으며, Enabled가 true여도 Route 후보에는 들어가지 않습니다.
         return;
     }
 
@@ -423,13 +410,8 @@ void APathLink::CollectValidationErrors(TArray<FString>& OutErrors) const
     switch (LinkType)
     {
     case EPathLinkType::Teleport:
-        // Teleport는 ExitActor의 실제 출구 위치를 자동으로 잡기 위해 ExitDirection을 요구합니다.
-        if (!FindSceneComponentByName(ExitActor, PathLinkComponentNames::ExitDirection))
-        {
-            OutErrors.Add(FString::Printf(
-                TEXT("[ExitActor.ExitDirection] Teleport ExitActor '%s'에서 ExitDirection 컴포넌트를 찾을 수 없습니다."),
-                *GetNameSafe(ExitActor.Get())));
-        }
+        // Teleport도 다른 LinkType과 동일하게 ExitActor의 위치만 사용합니다.
+        // PathLink는 Portal/ExitDirection 같은 특정 기믹 구현에 의존하지 않습니다.
         break;
 
     case EPathLinkType::JumpPad:
@@ -500,12 +482,16 @@ void APathLink::CollectValidationErrors(TArray<FString>& OutErrors) const
         }
     }
 
-    // 같은 타입의 동일 연결이 여러 번 배치됐는지 검사합니다.
-    CollectDuplicatePlacementErrors(ResolvedEntry, ResolvedExit, OutErrors);
-
-    if (!OutErrors.IsEmpty())
+    // 일반 공개 Validation에서는 중복 배치까지 검사합니다.
+    // Route Cache 구축 시에는 Subsystem이 전체 중복 검사를 한 번만 수행하므로 여기서는 생략할 수 있습니다.
+    if (bIncludeDuplicatePlacement)
     {
-        return;
+        CollectDuplicatePlacementErrors(ResolvedEntry, ResolvedExit, OutErrors);
+
+        if (!OutErrors.IsEmpty())
+        {
+            return;
+        }
     }
 
 }
@@ -607,6 +593,13 @@ void APathLink::CollectNavigationErrors(TArray<FString>& OutErrors) const
     // Client는 AI/NavMesh Route 계산 주체가 아닙니다.
     // Client에 NavData가 없다는 이유로 정상 배치된 Link를 Invalid로 만들지 않습니다.
     if (World->GetNetMode() == NM_Client)
+    {
+        return;
+    }
+
+    // ExitActor가 없는 Marker 전용 PathLink는 자체 Navigation 검사가 필요하지 않습니다.
+    // 이 Actor를 Exit로 참조하는 실제 Link가 자신의 Exit 위치를 Navigation에 투영해 검증합니다.
+    if (!IsValid(ExitActor))
     {
         return;
     }
@@ -728,8 +721,14 @@ bool APathLink::TryResolveTravelLocations(
     OutExitLocation = FVector::ZeroVector;
     OutFailureReason.Reset();
 
+    if (!IsValid(ExitActor))
+    {
+        OutFailureReason = TEXT("[ExitActor] ExitActor가 없는 PathLink는 Exit Marker 전용이며 이동 Link로 사용할 수 없습니다.");
+        return false;
+    }
+
     TArray<FString> ValidationErrors;
-    CollectValidationErrors(ValidationErrors);
+    CollectValidationErrors(ValidationErrors, true);
     if (!ValidationErrors.IsEmpty())
     {
         OutFailureReason = FString::Join(ValidationErrors, TEXT(" | "));
@@ -791,21 +790,9 @@ FVector APathLink::ResolveExitPoint(AActor* Actor, const FVector& LocalOffset) c
         return FVector::ZeroVector;
     }
 
-    FVector BaseLocation = Actor->GetActorLocation();
-
-    if (LinkType == EPathLinkType::Teleport)
-    {
-        // 기존 Portal은 TargetPortal의 ExitDirection 위치로 Character를 이동시키므로
-        // ExitActor만 지정해도 실제 출구 위치를 우선 사용합니다.
-        if (const USceneComponent* ExitDirection = FindSceneComponentByName(
-            Actor,
-            PathLinkComponentNames::ExitDirection))
-        {
-            BaseLocation = ExitDirection->GetComponentLocation();
-        }
-    }
-
-    return AddLocalOffset(Actor, BaseLocation, LocalOffset);
+    // 모든 LinkType은 동일하게 ExitActor의 위치를 Exit 기준점으로 사용합니다.
+    // Teleport도 Portal 클래스/ExitDirection 컴포넌트를 특별 취급하지 않습니다.
+    return AddLocalOffset(Actor, Actor->GetActorLocation(), LocalOffset);
 }
 
 #if WITH_EDITOR
