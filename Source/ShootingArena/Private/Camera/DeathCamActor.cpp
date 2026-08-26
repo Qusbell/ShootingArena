@@ -126,11 +126,12 @@ void ADeathCamActor::CacheSettings(UDeathCamDataAsset* inDeathCamData)
 	killerHighlightMaterial = inDeathCamData->killerHighlightMaterial;
 	killerHighlightStencilValue = inDeathCamData->killerHighlightStencilValue;
 
-	// 코드만 먼저 메인에 병합해도 기존 DA_DeathCamera_Default 값이 즉시 무효화되지 않도록
-	// 새 initialCameraDistance가 0이면 기존 orbitDistance 값을 migration fallback으로 사용합니다.
+	// Legacy OrbitDistance는 최종 기획에서 제거했습니다.
+	// 기존 DataAsset에 initialCameraDistance가 0으로 저장되어 있어도 카메라가 Center에 붙지 않도록
+	// 안전 기본값 600을 사용합니다. DataAsset을 한 번 열어 원하는 값을 명시적으로 저장하는 것을 권장합니다.
 	initialCameraDistance = inDeathCamData->initialCameraDistance > KINDA_SMALL_NUMBER
 		? inDeathCamData->initialCameraDistance
-		: inDeathCamData->orbitDistance;
+		: 600.0f;
 
 	initialCameraDistance = FMath::Max(initialCameraDistance, 0.0f);
 	cameraMoveInterpSpeed = FMath::Max(cameraMoveInterpSpeed, 0.0f);
