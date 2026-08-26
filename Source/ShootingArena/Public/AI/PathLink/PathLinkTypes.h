@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "PathLinkTypes.generated.h"
@@ -12,10 +12,10 @@ class APathLink;
 UENUM(BlueprintType)
 enum class EPathLinkType : uint8
 {
-    Teleport UMETA(DisplayName = "Teleport"),
-    JumpPad  UMETA(DisplayName = "JumpPad"),
+    Drop     UMETA(DisplayName = "Drop"),
     Jump     UMETA(DisplayName = "Jump"),
-    Drop     UMETA(DisplayName = "Drop")
+    JumpPad  UMETA(DisplayName = "JumpPad"),
+    Teleport UMETA(DisplayName = "Teleport")
 };
 
 /** 최종 Route를 구성하는 한 구간의 종류입니다. */
