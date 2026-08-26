@@ -6,13 +6,21 @@
 
 class APlayerController;
 class UDeathCamDataAsset;
+class UPrimitiveComponent;
+class UMaterialInterface;
 
 /**
  * 실제 DeathCam 시점을 담당하는 CameraActor입니다.
  *
- * 기본 상태에서는 Death Location을 화면 중앙에 고정하고,
- * Other 방향에 대해 약 90도 옆에서 바라보는 Side View 구도를 만듭니다.
- * Other를 해당 구도 안에 담을 수 없거나 벽에 가려지는 경우에만 Top View로 전환합니다.
+ * 최종 기획 기준:
+ * - 기준점(Center) = 사망 위치 + Z Offset
+ * - 기본 관계는 Camera - Center - Killer가 같은 선상
+ * - Camera는 Center를 기준으로 Killer의 반대편에 위치
+ * - Killer 이동 시 새 기본 위치를 계산하고 부드럽게 이동
+ * - 지형 충돌 시 Hit Normal을 기준으로 벽면을 따라 Slide
+ * - Camera는 항상 Center를 바라봄
+ *
+ * 네트워크 / ViewTarget / Spawn / Destroy는 DeathCamComponent가 담당합니다.
  */
 UCLASS(Blueprintable)
 class SHOOTINGARENA_API ADeathCamActor : public ACameraActor
@@ -23,8 +31,12 @@ public:
 	ADeathCamActor();
 
 	virtual void Tick(float deltaSeconds) override;
+	virtual void EndPlay(const EEndPlayReason::Type endPlayReason) override;
 
-	/** 사망 위치를 고정 기준점으로 저장하고 첫 DeathCam 구도를 즉시 계산합니다. */
+	/**
+	 * 기존 DeathCamComponent에서 사용하던 시그니처를 그대로 유지합니다.
+	 * PlayerController Blueprint를 수정하지 않아도 기존 StartDeathCam 흐름이 깨지지 않게 하기 위함입니다.
+	 */
 	bool InitializeDeathCam(
 		const FVector& inDeathLocation,
 		AActor* inOtherActor,
@@ -32,19 +44,32 @@ public:
 		UDeathCamDataAsset* inDeathCamData,
 		AActor* inDeadActorToIgnore);
 
-	/** 카메라 갱신 Tick만 중지합니다. ViewTarget 복귀/Destroy는 DeathCamComponent가 담당합니다. */
+	/** 카메라 갱신과 Killer Highlight를 중지합니다. ViewTarget 복귀/Destroy는 DeathCamComponent가 담당합니다. */
 	void StopDeathCam();
 
 	UFUNCTION(BlueprintPure, Category = "DeathCam")
 	bool IsDeathCamActive() const { return bDeathCamActive; }
 
-	UFUNCTION(BlueprintPure, Category = "DeathCam")
-	bool IsTopView() const { return bTopView; }
+	/**
+	 * TopView는 최종 기획에서 제거되었습니다.
+	 * 기존 Blueprint가 이 함수를 참조하고 있어도 컴파일 오류가 나지 않도록 호환용으로 남겨두며 항상 false를 반환합니다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "DeathCam", meta = (DeprecatedFunction, DeprecationMessage = "TopView was removed from the final DeathCam design."))
+	bool IsTopView() const { return false; }
 
 	UFUNCTION(BlueprintPure, Category = "DeathCam")
 	FVector GetDeathLocation() const { return deathLocation; }
 
+	/** 최종 기획의 기준점: DeathLocation + Offset(Z). */
+	UFUNCTION(BlueprintPure, Category = "DeathCam")
+	FVector GetCenterLocation() const { return centerLocation; }
+
+	/** DeathCam 진입 시 확정되고 유지되는 최대 카메라 거리. */
+	UFUNCTION(BlueprintPure, Category = "DeathCam")
+	float GetMaxDistance() const { return maxDistance; }
+
 private:
+	/** 최종 기획에서 말하는 Killer. 기존 코드/호환을 위해 입력 이름은 OtherActor를 유지합니다. */
 	UPROPERTY(Transient)
 	TObjectPtr<AActor> otherActor;
 
@@ -54,55 +79,75 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<APlayerController> ownerPlayerController;
 
+	/** 실제 사망 위치. */
 	FVector deathLocation = FVector::ZeroVector;
-	FRotator topViewTargetRotation = FRotator::ZeroRotator;
+
+	/** 기준점 = deathLocation + FVector::UpVector * centerOffset. */
+	FVector centerLocation = FVector::ZeroVector;
+
+	/** DeathCam 시작 시 정해지고 이후 증가하지 않는 최대 이동 거리. */
+	float maxDistance = 600.0f;
 
 	bool bDeathCamActive = false;
-	bool bTopView = false;
 
 	// DataAsset 값을 런타임에 복사합니다.
-	// DataAsset이 비어 있어도 아래 기본값으로 동작합니다.
-	float orbitDistance = 600.0f;
-	float orbitPitch = -20.0f;
-	float orbitYawOffset = 0.0f;
-	float orbitRotationSpeed = 90.0f;
-	float topViewDistance = 800.0f;
-	float topViewPitch = -90.0f;
-	float topViewYawOffset = 0.0f;
-	float topViewMoveSpeed = 500.0f;
-	float topViewRotationSpeed = 90.0f;
-	float orbitAlignmentTolerance = 1.0f;
-	float screenSafeRatio = 0.85f;
+	// DataAsset이 비어 있어도 아래 기본값으로 안전하게 동작합니다.
+	float centerOffset = 0.0f;
+	float initialCameraDistance = 600.0f;
+	float cameraMoveInterpSpeed = 5.0f;
+	bool bEnableKillerHighlight = true;
+	int32 killerHighlightStencilValue = 1;
 
-	// 충돌로 실제 위치가 당겨져도 목표 거리는 별도로 유지합니다.
-	float currentTargetDistance = 600.0f;
-
-	// Death Location -> Other 방향 기준으로 90도 옆에서 바라보는 것이 기본 Side View입니다.
-	static constexpr float sideViewBaseYawOffset = 90.0f;
+	/** DeathCam 카메라에만 적용할 Killer Highlight Post Process Material. */
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> killerHighlightMaterial;
 
 	// 기존 SpringArm Camera Collision과 같은 역할을 하는 Probe 반경입니다.
 	static constexpr float cameraProbeRadius = 12.0f;
 
+	// Sweep가 벽에 정확히 맞닿은 지점에서 다음 Sweep을 시작하면
+	// 같은 벽을 Time=0으로 다시 맞아 Slide가 뻑뻑해질 수 있습니다.
+	// 충돌 후 카메라를 표면에서 아주 조금 떼어 두는 기술적 여유값입니다.
+	static constexpr float cameraCollisionSkin = 2.0f;
+
+	// 모서리처럼 한 프레임에 두 면 이상을 만나는 경우에도
+	// 남은 이동량을 다시 투영할 수 있도록 제한된 횟수만 반복합니다.
+	static constexpr int32 maxSlideIterations = 3;
+
+	/** Killer Highlight 종료 시 원래 CustomDepth 상태로 되돌리기 위한 백업입니다. */
+	struct FHighlightComponentState
+	{
+		TWeakObjectPtr<UPrimitiveComponent> component;
+		bool bRenderCustomDepth = false;
+		int32 customDepthStencilValue = 0;
+	};
+
+	TArray<FHighlightComponentState> killerHighlightStates;
+
 	void CacheSettings(UDeathCamDataAsset* inDeathCamData);
-	FRotator CalculateOrbitTargetRotation() const;
-	float CalculateRequiredOrbitDistance(const FRotator& viewRotation) const;
-	void UpdateOrbit(float deltaSeconds);
-	void UpdateTopView(float deltaSeconds);
-	void SwitchToTopView(const TCHAR* reason);
+	void UpdateDeathCam(float deltaSeconds);
 
-	/** 일반 Side View에서 Death Location과 목표 Camera 위치 사이의 충돌을 처리합니다. */
-	FVector ResolveCameraLocation(const FRotator& viewRotation, float targetDistance) const;
+	/** Center -> Killer 방향. Killer가 유효하지 않으면 안전한 fallback 방향을 반환합니다. */
+	FVector CalculateKillerDirection() const;
 
-	/** Top View에서 Death Location 바로 위 목표 위치까지의 충돌을 처리합니다. */
-	FVector ResolveTopViewLocation(float targetDistance) const;
+	/** 기획의 기본 Camera 위치: Center - KillerDirection * MaxDistance. */
+	FVector CalculateBaseCameraLocation(const FVector& killerDirection) const;
 
-	/** 일반 Side View의 CameraActor World Transform을 적용합니다. */
-	void ApplyCameraTransform(const FRotator& viewRotation, float targetDistance);
+	/** DeathCam 첫 프레임 위치를 지형 안에 생성하지 않도록 Center -> 초기 위치 Sweep을 수행합니다. */
+	FVector ResolveInitialCameraLocation(const FVector& desiredCameraLocation) const;
 
-	bool HasClearViewToOther() const;
+	/** 현재 위치에서 원하는 이동량만큼 움직이되, 충돌하면 Hit Normal 기준으로 벽면 Slide를 적용합니다. */
+	FVector MoveCameraWithCollision(const FVector& cameraMove, const FVector& killerDirection) const;
 
-	/** 현재 DeathCam 자체의 카메라 기준으로 Other가 실제 화면 프레임 안에 들어오는지 계산합니다. */
-	bool IsOtherInsideScreen() const;
+	/** MaxDistance와 'Center를 넘어 Killer 방향으로 이동 금지' 규칙을 마지막에 강제합니다. */
+	FVector ClampCameraLocation(const FVector& candidateLocation, const FVector& killerDirection) const;
 
-	bool HasReachedOrbitRotation(const FRotator& targetRotation) const;
+	/** Camera가 어느 위치에 있든 Center를 바라보도록 회전을 갱신합니다. */
+	FRotator CalculateLookAtCenterRotation(const FVector& cameraLocation) const;
+
+	/** DataAsset에 지정된 Highlight Post Process Material을 이 DeathCam 카메라에만 적용합니다. */
+	void ApplyKillerHighlightPostProcess();
+
+	void ApplyKillerHighlight();
+	void RemoveKillerHighlight();
 };
