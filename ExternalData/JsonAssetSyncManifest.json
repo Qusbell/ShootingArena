@@ -1,0 +1,91 @@
+{
+	"manifestVersion": 1,
+	"projectName": "ShootingArena",
+	"registry": "/Game/JsonAssetSync/DA_JsonApplyRegistry.DA_JsonApplyRegistry",
+	"dataTables": [
+		{
+			"id": "/Game/QuakeLike_1_0/Data/JsonParser/DT_JsonParserTest.DT_JsonParserTest",
+			"displayName": "DT_JsonParserTest",
+			"assetType": "DataTable",
+			"source": "Content/DataTables/JsonParserTest.json",
+			"target": "/Game/QuakeLike_1_0/Data/JsonParser/DT_JsonParserTest.DT_JsonParserTest",
+			"rowStruct": "/Game/QuakeLike_1_0/JsonParser/ST_JsonParserTestRow.ST_JsonParserTestRow",
+			"properties": [
+				{
+					"name": "displayName",
+					"displayName": "displayName",
+					"cppType": "FString",
+					"order": 0,
+					"advancedDisplay": false,
+					"type": "string"
+				},
+				{
+					"name": "count",
+					"displayName": "count",
+					"cppType": "int32",
+					"order": 1,
+					"advancedDisplay": false,
+					"type": "int32"
+				},
+				{
+					"name": "value",
+					"displayName": "value",
+					"cppType": "double",
+					"order": 2,
+					"advancedDisplay": false,
+					"type": "double"
+				}
+			]
+		}
+	],
+	"curveTables": [],
+	"floatCurves": [],
+	"dataAssets": [
+		{
+			"id": "/Game/QuakeLike_1_0/Data/JsonParser/DA_Testda.DA_Testda",
+			"displayName": "DA_Testda",
+			"assetType": "DataAsset",
+			"source": "Content/DataAssets/TestDataAsset.json",
+			"target": "/Game/QuakeLike_1_0/Data/JsonParser/DA_Testda.DA_Testda",
+			"class": "/Game/QuakeLike_1_0/Data/PDA/PDA_TestDa.PDA_TestDa_C",
+			"properties": [
+				{
+					"name": "bool",
+					"displayName": "Bool",
+					"cppType": "bool",
+					"order": 0,
+					"category": "Default",
+					"advancedDisplay": false,
+					"type": "bool"
+				},
+				{
+					"name": "string",
+					"displayName": "String",
+					"cppType": "FString",
+					"order": 1,
+					"category": "Default",
+					"advancedDisplay": false,
+					"type": "string"
+				},
+				{
+					"name": "int",
+					"displayName": "Int",
+					"cppType": "int32",
+					"order": 2,
+					"category": "Default",
+					"advancedDisplay": false,
+					"type": "int32"
+				},
+				{
+					"name": "float",
+					"displayName": "Float",
+					"cppType": "double",
+					"order": 3,
+					"category": "Default",
+					"advancedDisplay": false,
+					"type": "double"
+				}
+			]
+		}
+	]
+}
