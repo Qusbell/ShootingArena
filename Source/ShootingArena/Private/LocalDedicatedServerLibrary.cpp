@@ -28,6 +28,18 @@ bool ULocalDedicatedServerLibrary::StartLocalDedicatedServer(
     const FString& MapName,
     int32 Port)
 {
+    if (IsRunningDedicatedServer())
+    {
+        UE_LOG(
+            LogTemp,
+            Warning,
+            TEXT("[LocalDedicatedServer] Dedicated Server 프로세스에서는 "
+                "다른 로컬 Dedicated Server를 시작하지 않습니다.")
+        );
+
+        return false;
+    }
+
     if (IsLocalDedicatedServerRunning())
     {
         UE_LOG(
@@ -167,10 +179,15 @@ bool ULocalDedicatedServerLibrary::StartLocalDedicatedServer(
 
     UE_LOG(
         LogTemp,
-        Log,
-        TEXT("[LocalDedicatedServer] 서버 프로세스를 시작했습니다. PID=%u, ReadyFile=%s"),
+        Warning,
+        TEXT(
+            "[LocalDedicatedServer] Spawned. "
+            "CallerPID=%u / SpawnedPID=%u / IsDedicated=%d / ReadyFile=%s"
+        ),
+        FPlatformProcess::GetCurrentProcessId(),
         OutProcessID,
-        *GLocalDedicatedServerReadyFilePath
+        IsRunningDedicatedServer() ? 1 : 0,
+        * GLocalDedicatedServerReadyFilePath
     );
 
     return true;
