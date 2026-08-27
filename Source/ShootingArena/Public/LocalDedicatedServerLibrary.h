@@ -40,4 +40,28 @@ public:
 	*/
 	UFUNCTION(BlueprintPure, Category = "Server|LocalDedicatedServer", meta = (Keywords = "Campaign Server Running Dedicated Process"))
 	static bool IsLocalDedicatedServerRunning();
+
+
+	/**
+	* 로컬 전용 서버가 클라이언트 접속을 받을 준비가 되었는지 확인합니다.
+	*
+	* 서버 프로세스가 살아 있고,
+	* 해당 서버 프로세스가 Ready 파일을 생성한 경우 true를 반환합니다.
+	*/
+	UFUNCTION(BlueprintPure, Category = "Server|LocalDedicatedServer",
+		meta = (Keywords = "Campaign Server Ready Dedicated Process"))
+	static bool IsLocalDedicatedServerReady();
+
+	/**
+	 * 현재 Dedicated Server 프로세스가 클라이언트 접속 준비를 완료했음을 표시합니다.
+	 *
+	 * 서버 측 ServerEntry GameMode 등에서 호출합니다.
+	 * Dedicated Server가 아니거나 NetDriver가 아직 준비되지 않았다면 false를 반환합니다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Server|LocalDedicatedServer",
+		meta = (
+			WorldContext = "WorldContextObject",
+			Keywords = "Campaign Server Ready Mark Dedicated Process"
+			))
+	static bool MarkLocalDedicatedServerReady(UObject* WorldContextObject);
 };
