@@ -6,11 +6,16 @@
 #include "JsonAssetSyncLog.h"
 #include "JsonAssetSyncSettings.h"
 #include "JsonDataAssetProcessor.h"
+#include "JsonCurveTableProcessor.h"
+#include "JsonFloatCurveProcessor.h"
 #include "JsonDataTableProcessor.h"
 
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
 #include "Engine/DataAsset.h"
+#include "Engine/CurveTable.h"
+#include "Curves/CurveFloat.h"
+#include "Curves/RichCurve.h"
 #include "Engine/DataTable.h"
 #include "HAL/FileManager.h"
 #include "Misc/FileHelper.h"
@@ -18,6 +23,7 @@
 #include "Misc/Paths.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
+#include "JsonObjectConverter.h"
 #include "UObject/Package.h"
 #include "UObject/SavePackage.h"
 
@@ -754,6 +760,273 @@ namespace JsonAssetSync::Private
 		return !HasError(inOutResult);
 	}
 
+
+	/**
+	 * CurveTable JSON의 기본 구조를 검사한다.
+	 *
+	 * Unreal CurveTable JSON은 다음 형태다.
+	 * [
+	 *   { "Name": "CurveA", "0": 1.0, "1": 2.0 }
+	 * ]
+	 *
+	 * Name 이외의 필드명은 Curve Key Time이며 값은 숫자여야 한다.
+	 */
+	bool ValidateCurveTableRoot(
+		const TSharedPtr<FJsonValue>& rootValue,
+		FJsonApplyResult& inOutResult
+	)
+	{
+		const TArray<TSharedPtr<FJsonValue>>& rows =
+			rootValue->AsArray();
+
+		TSet<FString> rowNames;
+
+		for (int32 rowIndex = 0; rowIndex < rows.Num(); ++rowIndex)
+		{
+			const TSharedPtr<FJsonValue>& rowValue = rows[rowIndex];
+
+			if (!rowValue.IsValid() ||
+				rowValue->Type != EJson::Object)
+			{
+				inOutResult.issues.Add(
+					MakeIssue(
+						EJsonApplyIssueStage::Structure,
+						EJsonApplyIssueSeverity::Error,
+						inOutResult.sourceJsonPath,
+						inOutResult.targetAssetPath,
+						FString::Printf(
+							TEXT("CurveTable JSON의 %d번째 항목이 Object가 아닙니다."),
+							rowIndex
+						),
+						NAME_None,
+						FString::Printf(TEXT("[%d]"), rowIndex)
+					)
+				);
+				continue;
+			}
+
+			const TSharedPtr<FJsonObject> rowObject =
+				rowValue->AsObject();
+
+			FString rowNameString;
+			if (!rowObject->TryGetStringField(
+				TEXT("Name"),
+				rowNameString
+			) ||
+				rowNameString.TrimStartAndEnd().IsEmpty())
+			{
+				inOutResult.issues.Add(
+					MakeIssue(
+						EJsonApplyIssueStage::Structure,
+						EJsonApplyIssueSeverity::Error,
+						inOutResult.sourceJsonPath,
+						inOutResult.targetAssetPath,
+						TEXT("CurveTable Row에는 비어 있지 않은 문자열 Name 필드가 필요합니다."),
+						NAME_None,
+						FString::Printf(TEXT("[%d].Name"), rowIndex)
+					)
+				);
+				continue;
+			}
+
+			FString rowNameKey = rowNameString;
+			rowNameKey.ToLowerInline();
+			if (rowNames.Contains(rowNameKey))
+			{
+				inOutResult.issues.Add(
+					MakeIssue(
+						EJsonApplyIssueStage::Structure,
+						EJsonApplyIssueSeverity::Error,
+						inOutResult.sourceJsonPath,
+						inOutResult.targetAssetPath,
+						FString::Printf(
+							TEXT("중복된 CurveTable Row Name이 발견됐습니다: %s"),
+							*rowNameString
+						),
+						FName(*rowNameString),
+						TEXT("Name")
+					)
+				);
+				continue;
+			}
+			rowNames.Add(rowNameKey);
+
+			int32 curveKeyCount = 0;
+
+			for (const TPair<FString, TSharedPtr<FJsonValue>>& field :
+				rowObject->Values)
+			{
+				if (field.Key.Equals(
+					TEXT("Name"),
+					ESearchCase::IgnoreCase
+				))
+				{
+					continue;
+				}
+
+				++curveKeyCount;
+
+				if (!field.Value.IsValid() ||
+					field.Value->Type != EJson::Number)
+				{
+					inOutResult.issues.Add(
+						MakeIssue(
+							EJsonApplyIssueStage::Structure,
+							EJsonApplyIssueSeverity::Error,
+							inOutResult.sourceJsonPath,
+							inOutResult.targetAssetPath,
+							TEXT("CurveTable Key의 Value는 숫자여야 합니다."),
+							FName(*rowNameString),
+							field.Key
+						)
+					);
+				}
+
+				float keyTime = 0.0f;
+				if (!LexTryParseString(keyTime, *field.Key))
+				{
+					inOutResult.issues.Add(
+						MakeIssue(
+							EJsonApplyIssueStage::Structure,
+							EJsonApplyIssueSeverity::Error,
+							inOutResult.sourceJsonPath,
+							inOutResult.targetAssetPath,
+							FString::Printf(
+								TEXT("CurveTable Key Time은 숫자로 해석 가능한 문자열이어야 합니다: %s"),
+								*field.Key
+							),
+							FName(*rowNameString),
+							field.Key
+						)
+					);
+				}
+			}
+
+			if (curveKeyCount == 0)
+			{
+				inOutResult.issues.Add(
+					MakeIssue(
+						EJsonApplyIssueStage::Structure,
+						EJsonApplyIssueSeverity::Warning,
+						inOutResult.sourceJsonPath,
+						inOutResult.targetAssetPath,
+						TEXT("CurveTable Row에 Curve Key가 하나도 없습니다."),
+						FName(*rowNameString)
+					)
+				);
+			}
+		}
+
+		return !HasError(inOutResult);
+	}
+
+
+	/**
+	 * Curve Float JSON을 FRichCurve Reflection 구조로 검사한다.
+	 *
+	 * 실제 적용 전에 임시 FRichCurve로 변환하므로
+	 * Validate All / Packaging Preflight에서도 타입 오류를 잡을 수 있다.
+	 */
+	bool ValidateFloatCurveRoot(
+		const TSharedPtr<FJsonValue>& rootValue,
+		const bool strictValidation,
+		FJsonApplyResult& inOutResult
+	)
+	{
+		if (!rootValue.IsValid() ||
+			rootValue->Type != EJson::Object)
+		{
+			inOutResult.issues.Add(
+				MakeIssue(
+					EJsonApplyIssueStage::Structure,
+					EJsonApplyIssueSeverity::Error,
+					inOutResult.sourceJsonPath,
+					inOutResult.targetAssetPath,
+					TEXT("Curve Float JSON 최상위는 Object여야 합니다.")
+				)
+			);
+			return false;
+		}
+
+		FRichCurve stagedCurve;
+		FText failReason;
+
+		const bool converted =
+			FJsonObjectConverter::JsonObjectToUStruct(
+				rootValue->AsObject().ToSharedRef(),
+				FRichCurve::StaticStruct(),
+				&stagedCurve,
+				0,
+				0,
+				strictValidation,
+				&failReason,
+				nullptr
+			);
+
+		if (!converted)
+		{
+			inOutResult.issues.Add(
+				MakeIssue(
+					EJsonApplyIssueStage::Conversion,
+					EJsonApplyIssueSeverity::Error,
+					inOutResult.sourceJsonPath,
+					inOutResult.targetAssetPath,
+					FString::Printf(
+						TEXT(
+							"Curve Float JSON 구조를 FRichCurve로 "
+							"변환하지 못했습니다: %s"
+						),
+						failReason.IsEmpty()
+							? TEXT("알 수 없는 변환 오류")
+							: *failReason.ToString()
+					)
+				)
+			);
+			return false;
+		}
+
+		stagedCurve.Keys.Sort(
+			[](const FRichCurveKey& left, const FRichCurveKey& right)
+			{
+				return left.Time < right.Time;
+			}
+		);
+
+		for (int32 index = 1; index < stagedCurve.Keys.Num(); ++index)
+		{
+			if (FMath::IsNearlyEqual(
+				stagedCurve.Keys[index - 1].Time,
+				stagedCurve.Keys[index].Time,
+				KINDA_SMALL_NUMBER
+			))
+			{
+				inOutResult.issues.Add(
+					MakeIssue(
+						EJsonApplyIssueStage::Structure,
+						EJsonApplyIssueSeverity::Error,
+						inOutResult.sourceJsonPath,
+						inOutResult.targetAssetPath,
+						FString::Printf(
+							TEXT(
+								"Curve Float Key Time이 중복되었습니다: %s"
+							),
+							*FString::SanitizeFloat(
+								stagedCurve.Keys[index].Time
+							)
+						),
+						NAME_None,
+						FString::Printf(
+							TEXT("keys[%d].time"),
+							index
+						)
+					)
+				);
+			}
+		}
+
+		return !HasError(inOutResult);
+	}
+
 	/**
 	 * Registry Binding 하나를 검사하거나 적용한다.
 	 */
@@ -903,8 +1176,8 @@ namespace JsonAssetSync::Private
 		result.sourceJsonPath = absoluteJsonPath;
 
 		const EExpectedJsonRootType expectedRootType =
-			targetType ==
-			EJsonApplyTargetType::DataTable
+			(targetType == EJsonApplyTargetType::DataTable ||
+			 targetType == EJsonApplyTargetType::CurveTable)
 				? EExpectedJsonRootType::Array
 				: EExpectedJsonRootType::Object;
 
@@ -926,6 +1199,23 @@ namespace JsonAssetSync::Private
 		{
 			ValidateDataTableRoot(
 				document.rootValue,
+				result
+			);
+		}
+		else if (targetType ==
+			EJsonApplyTargetType::CurveTable)
+		{
+			ValidateCurveTableRoot(
+				document.rootValue,
+				result
+			);
+		}
+		else if (targetType ==
+			EJsonApplyTargetType::FloatCurve)
+		{
+			ValidateFloatCurveRoot(
+				document.rootValue,
+				strictValidation,
 				result
 			);
 		}
@@ -969,6 +1259,64 @@ namespace JsonAssetSync::Private
 				result.isSuccess =
 					SaveAppliedAsset(
 						targetDataTable,
+						result
+					);
+			}
+#endif
+
+			return result;
+		}
+
+
+		if (targetType ==
+			EJsonApplyTargetType::CurveTable)
+		{
+			UCurveTable* targetCurveTable =
+				Cast<UCurveTable>(targetAsset);
+
+			result.isSuccess =
+				FJsonCurveTableProcessor::ValidateAndApply(
+					targetCurveTable,
+					document.jsonText,
+					strictValidation,
+					result
+				);
+
+#if WITH_EDITOR
+			if (result.isSuccess && saveAppliedAsset)
+			{
+				result.isSuccess =
+					SaveAppliedAsset(
+						targetCurveTable,
+						result
+					);
+			}
+#endif
+
+			return result;
+		}
+
+
+		if (targetType ==
+			EJsonApplyTargetType::FloatCurve)
+		{
+			UCurveFloat* targetFloatCurve =
+				Cast<UCurveFloat>(targetAsset);
+
+			result.isSuccess =
+				FJsonFloatCurveProcessor::ValidateAndApply(
+					targetFloatCurve,
+					document.jsonText,
+					strictValidation,
+					result
+				);
+
+#if WITH_EDITOR
+			if (result.isSuccess && saveAppliedAsset)
+			{
+				result.isSuccess =
+					SaveAppliedAsset(
+						targetFloatCurve,
 						result
 					);
 			}
@@ -1090,9 +1438,13 @@ namespace JsonAssetSync::Private
 
 		summary.totalCount =
 			registry->dataTableBindings.Num() +
+			registry->curveTableBindings.Num() +
+			registry->floatCurveBindings.Num() +
 			registry->dataAssetBindings.Num();
 
 		TSet<FString> seenDataTableJsonPaths;
+		TSet<FString> seenCurveTableJsonPaths;
+		TSet<FString> seenFloatCurveJsonPaths;
 		TSet<FString> seenDataAssetJsonPaths;
 		TSet<FString> seenTargetAssets;
 
@@ -1109,6 +1461,64 @@ namespace JsonAssetSync::Private
 					saveAppliedAssets,
 					settings->strictValidation,
 					seenDataTableJsonPaths,
+					seenTargetAssets
+				);
+
+			if (result.isSuccess)
+			{
+				++summary.successCount;
+			}
+			else
+			{
+				++summary.failureCount;
+			}
+
+			summary.results.Add(MoveTemp(result));
+		}
+
+
+		for (const FJsonCurveTableBinding& binding :
+			registry->curveTableBindings)
+		{
+			FJsonApplyResult result =
+				ProcessBinding(
+					EJsonApplyTargetType::CurveTable,
+					settings->curveTableJsonDirectory,
+					binding.jsonRelativePath,
+					binding.targetCurveTable.Get(),
+					applyChanges,
+					saveAppliedAssets,
+					settings->strictValidation,
+					seenCurveTableJsonPaths,
+					seenTargetAssets
+				);
+
+			if (result.isSuccess)
+			{
+				++summary.successCount;
+			}
+			else
+			{
+				++summary.failureCount;
+			}
+
+			summary.results.Add(MoveTemp(result));
+		}
+
+
+		for (const FJsonFloatCurveBinding& binding :
+			registry->floatCurveBindings)
+		{
+			FJsonApplyResult result =
+				ProcessBinding(
+					EJsonApplyTargetType::FloatCurve,
+					settings->floatCurveJsonDirectory,
+					binding.jsonRelativePath,
+					binding.targetFloatCurve.Get(),
+					applyChanges,
+					saveAppliedAssets,
+					settings->strictValidation,
+					seenFloatCurveJsonPaths,
 					seenTargetAssets
 				);
 
@@ -1163,6 +1573,12 @@ namespace JsonAssetSync::Private
 		{
 		case EJsonApplyTargetType::DataTable:
 			return TEXT("DataTable");
+
+		case EJsonApplyTargetType::CurveTable:
+			return TEXT("CurveTable");
+
+		case EJsonApplyTargetType::FloatCurve:
+			return TEXT("FloatCurve");
 
 		case EJsonApplyTargetType::DataAsset:
 			return TEXT("DataAsset");

@@ -3,6 +3,8 @@
 #include "JsonAssetSyncEditor.h"
 
 #include "JsonAssetSyncPackagingPreflight.h"
+#include "JsonAssetSyncSchemaExporter.h"
+#include "JsonApplyRegistry.h"
 #include "JsonAssetSyncSettings.h"
 #include "JsonAssetSyncSubsystem.h"
 
@@ -18,6 +20,8 @@
 #include "ToolMenu.h"
 #include "ToolMenus.h"
 #include "Widgets/Notifications/SNotificationList.h"
+#include "UObject/UObjectGlobals.h" // FCoreUObjectDelegates::OnObjectPropertyChanged
+#include "UObject/UnrealType.h"
 
 #define LOCTEXT_NAMESPACE "JsonAssetSyncEditor"
 
@@ -88,6 +92,9 @@ namespace JsonAssetSyncEditor::Private
 		{
 		case EJsonApplyTargetType::DataTable:
 			return TEXT("DataTable");
+
+		case EJsonApplyTargetType::CurveTable:
+			return TEXT("CurveTable");
 
 		case EJsonApplyTargetType::DataAsset:
 			return TEXT("DataAsset");
@@ -264,6 +271,18 @@ void FJsonAssetSyncEditorModule::StartupModule()
 		);
 
 	/*
+	 * Registry Details에서 Target DataTable/CurveTable/DataAsset을 지정했을 때
+	 * JSON Relative Path가 비어 있으면 자동 경로와 초기 JSON을
+	 * 다음 Tick에서 생성할 수 있도록 Property 변경을 감시한다.
+	 */
+	registryPropertyChangedHandle =
+		FCoreUObjectDelegates::OnObjectPropertyChanged.AddRaw(
+			this,
+			&FJsonAssetSyncEditorModule::
+				HandleRegistryPropertyChanged
+		);
+
+	/*
 	 * ToolMenus가 메뉴 등록 가능한 상태가 될 때까지 기다렸다가
 	 * Tools 메뉴에 Apply JSON 항목 하나를 추가한다.
 	 */
@@ -290,6 +309,22 @@ void FJsonAssetSyncEditorModule::ShutdownModule()
 		);
 
 		deferredEditorAutoApplyHandle.Reset();
+	}
+
+	if (deferredManifestRefreshHandle.IsValid())
+	{
+		FTSTicker::GetCoreTicker().RemoveTicker(
+			deferredManifestRefreshHandle
+		);
+		deferredManifestRefreshHandle.Reset();
+	}
+
+	if (registryPropertyChangedHandle.IsValid())
+	{
+		FCoreUObjectDelegates::OnObjectPropertyChanged.Remove(
+			registryPropertyChangedHandle
+		);
+		registryPropertyChangedHandle.Reset();
 	}
 
 	if (editorInitializedHandle.IsValid())
@@ -327,6 +362,14 @@ void FJsonAssetSyncEditorModule::HandleEditorInitialized(
 
 	RegisterMessageLog();
 	BindToRuntimeSubsystem();
+
+	/*
+	 * 외부 Data Editor가 프로젝트 구조를 자동으로 인식할 수 있도록
+	 * Registry와 Reflection을 기준으로 Manifest를 자동 갱신한다.
+	 * 내용이 동일하면 파일은 다시 쓰지 않는다.
+	 */
+	RefreshExternalDataManifest(false, false);
+
 	RunPackagingPreflight();
 
 	/*
@@ -334,6 +377,83 @@ void FJsonAssetSyncEditorModule::HandleEditorInitialized(
 	 * 모든 구독자가 처리를 마친 다음 Tick에서 실행한다.
 	 */
 	ScheduleDeferredEditorAutoApply();
+}
+
+
+void FJsonAssetSyncEditorModule::HandleRegistryPropertyChanged(
+	UObject* changedObject,
+	FPropertyChangedEvent& propertyChangedEvent
+)
+{
+	static_cast<void>(propertyChangedEvent);
+
+	if (Cast<UJsonApplyRegistry>(changedObject) == nullptr)
+	{
+		return;
+	}
+
+	const UJsonAssetSyncSettings* settings =
+		GetDefault<UJsonAssetSyncSettings>();
+
+	if (!IsValid(settings))
+	{
+		return;
+	}
+
+	/*
+	 * 현재 Project Settings에 지정된 Registry만 처리한다.
+	 * 다른 테스트 Registry를 편집하는 경우에는 건드리지 않는다.
+	 */
+	const FSoftObjectPath configuredRegistryPath =
+		settings->registryAsset.ToSoftObjectPath();
+
+	if (configuredRegistryPath.IsValid() &&
+		changedObject->GetPathName() !=
+			configuredRegistryPath.ToString())
+	{
+		return;
+	}
+
+	ScheduleDeferredManifestRefresh();
+}
+
+void FJsonAssetSyncEditorModule::
+	ScheduleDeferredManifestRefresh()
+{
+	if (deferredManifestRefreshHandle.IsValid())
+	{
+		return;
+	}
+
+	deferredManifestRefreshHandle =
+		FTSTicker::GetCoreTicker().AddTicker(
+			FTickerDelegate::CreateRaw(
+				this,
+				&FJsonAssetSyncEditorModule::
+					HandleDeferredManifestRefresh
+			),
+			0.0f
+		);
+}
+
+bool FJsonAssetSyncEditorModule::
+	HandleDeferredManifestRefresh(const float deltaTime)
+{
+	static_cast<void>(deltaTime);
+
+	deferredManifestRefreshHandle.Reset();
+
+	/*
+	 * ExportManifest 내부에서:
+	 * - 비어 있는 JSON Relative Path 자동 지정
+	 * - JSON이 없으면 Target 현재 값으로 초기 JSON 생성
+	 * - Registry .uasset 저장
+	 * - Manifest 갱신
+	 * 을 한 번에 처리한다.
+	 */
+	RefreshExternalDataManifest(false, false);
+
+	return false;
 }
 
 void FJsonAssetSyncEditorModule::
@@ -1048,6 +1168,134 @@ void FJsonAssetSyncEditorModule::
 	);
 }
 
+void FJsonAssetSyncEditorModule::RefreshExternalDataManifest(
+	const bool forceRewrite,
+	const bool showSuccessNotification
+)
+{
+	using namespace JsonAssetSyncEditor::Private;
+
+	const FJsonAssetSyncManifestExportResult exportResult =
+		FJsonAssetSyncSchemaExporter::ExportManifest(forceRewrite);
+
+	FMessageLog messageLog(messageLogName);
+
+	if (!exportResult.success)
+	{
+		messageLog.Error(
+			FText::FromString(
+				TEXT("[Manifest] 외부 데이터 Manifest 생성에 실패했습니다.")
+			)
+		);
+
+		for (const FString& error : exportResult.errors)
+		{
+			messageLog.Error(FText::FromString(error));
+		}
+
+		const UJsonAssetSyncSettings* settings =
+			GetDefault<UJsonAssetSyncSettings>();
+
+		if (IsValid(settings) && settings->showEditorNotifications)
+		{
+			FNotificationInfo notificationInfo(
+				LOCTEXT(
+					"ManifestExportFailed",
+					"JSON Asset Sync Manifest 생성 실패"
+				)
+			);
+			notificationInfo.ExpireDuration = 5.0f;
+
+			TSharedPtr<SNotificationItem> notificationItem =
+				FSlateNotificationManager::Get().AddNotification(notificationInfo);
+
+			if (notificationItem.IsValid())
+			{
+				notificationItem->SetCompletionState(SNotificationItem::CS_Fail);
+			}
+		}
+
+		return;
+	}
+
+	if (exportResult.autoFilledPathCount > 0)
+	{
+		messageLog.Info(
+			FText::FromString(
+				FString::Printf(
+					TEXT(
+						"[Manifest] 비어 있던 JSON Relative Path %d개를 "
+						"Target Asset 이름 기준으로 자동 지정했습니다."
+					),
+					exportResult.autoFilledPathCount
+				)
+			)
+		);
+	}
+
+	if (exportResult.createdJsonFileCount > 0)
+	{
+		messageLog.Info(
+			FText::FromString(
+				FString::Printf(
+					TEXT(
+						"[Manifest] Target Asset의 현재 값으로 "
+						"초기 JSON 파일 %d개를 자동 생성했습니다."
+					),
+					exportResult.createdJsonFileCount
+				)
+			)
+		);
+	}
+
+	if (exportResult.changed)
+	{
+		messageLog.Info(
+			FText::FromString(
+				FString::Printf(
+					TEXT("[Manifest] 외부 데이터 Manifest를 갱신했습니다: %s"),
+					*exportResult.manifestPath
+				)
+			)
+		);
+	}
+
+	if (showSuccessNotification)
+	{
+		const UJsonAssetSyncSettings* settings =
+			GetDefault<UJsonAssetSyncSettings>();
+
+		if (IsValid(settings) && settings->showEditorNotifications)
+		{
+			FNotificationInfo notificationInfo(
+				exportResult.changed
+					? LOCTEXT(
+						"ManifestExported",
+						"외부 데이터 Manifest를 다시 생성했습니다."
+					)
+					: LOCTEXT(
+						"ManifestUnchanged",
+						"외부 데이터 Manifest가 이미 최신 상태입니다."
+					)
+			);
+			notificationInfo.ExpireDuration = 3.0f;
+
+			TSharedPtr<SNotificationItem> notificationItem =
+				FSlateNotificationManager::Get().AddNotification(notificationInfo);
+
+			if (notificationItem.IsValid())
+			{
+				notificationItem->SetCompletionState(SNotificationItem::CS_Success);
+			}
+		}
+	}
+}
+
+void FJsonAssetSyncEditorModule::ExecuteRebuildExternalDataManifest()
+{
+	RefreshExternalDataManifest(true, true);
+}
+
 void FJsonAssetSyncEditorModule::OpenMessageLog()
 {
 	using namespace JsonAssetSyncEditor::Private;
@@ -1102,7 +1350,7 @@ void FJsonAssetSyncEditorModule::RegisterToolMenus()
 		),
 		LOCTEXT(
 			"ApplyJsonMenuTooltip",
-			"Registry의 모든 JSON을 검사하고 정상 항목을 DataTable과 DataAsset에 적용합니다. 실패 이유는 JSON Asset Sync Message Log에 기록됩니다."
+			"Registry의 모든 JSON을 검사하고 정상 항목을 DataTable, CurveTable, DataAsset에 적용합니다. 실패 이유는 JSON Asset Sync Message Log에 기록됩니다."
 		),
 		FSlateIcon(),
 		FUIAction(
@@ -1118,6 +1366,30 @@ void FJsonAssetSyncEditorModule::RegisterToolMenus()
 			)
 		)
 	);
+
+	/*
+	 * 평소에는 에디터 시작 시 자동 갱신되지만,
+	 * 개발자가 즉시 Schema를 다시 만들고 싶을 때 사용하는 보조 메뉴다.
+	 */
+	section.AddMenuEntry(
+		TEXT("JsonAssetSync.RebuildExternalDataManifest"),
+		LOCTEXT(
+			"RebuildExternalDataManifestMenuLabel",
+			"Rebuild External Data Manifest"
+		),
+		LOCTEXT(
+			"RebuildExternalDataManifestMenuTooltip",
+			"현재 Registry와 Unreal Reflection 정보를 기준으로 ExternalData/JsonAssetSyncManifest.json을 강제로 다시 생성합니다."
+		),
+		FSlateIcon(),
+		FUIAction(
+			FExecuteAction::CreateRaw(
+				this,
+				&FJsonAssetSyncEditorModule::ExecuteRebuildExternalDataManifest
+			)
+		)
+	);
+
 }
 
 void FJsonAssetSyncEditorModule::UnregisterToolMenus()

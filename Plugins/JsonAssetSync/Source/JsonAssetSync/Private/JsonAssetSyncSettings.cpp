@@ -9,6 +9,8 @@ UJsonAssetSyncSettings::UJsonAssetSyncSettings()
 	 * JSON 루트 상대 경로 기본값이다.
 	 */
 	dataTableJsonDirectory = TEXT("DataTables");
+	curveTableJsonDirectory = TEXT("CurveTables");
+	floatCurveJsonDirectory = TEXT("FloatCurves");
 	dataAssetJsonDirectory = TEXT("DataAssets");
 
 	/*
@@ -83,7 +85,7 @@ FText UJsonAssetSyncSettings::GetSectionDescription() const
 	return NSLOCTEXT(
 		"JsonAssetSyncSettings",
 		"SectionDescription",
-		"외부 JSON 파일을 Registry에 등록된 DataTable과 DataAsset에 검사하고 적용합니다."
+		"외부 JSON 파일을 Registry에 등록된 DataTable, CurveTable, FloatCurve, DataAsset에 검사하고 적용합니다."
 	);
 }
 
