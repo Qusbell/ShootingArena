@@ -7,6 +7,8 @@
 #include "JsonAssetSyncSettings.h"
 
 #include "Engine/DataAsset.h"
+#include "Engine/CurveTable.h"
+#include "Curves/CurveFloat.h"
 #include "Engine/DataTable.h"
 #include "HAL/FileManager.h"
 #include "Misc/PackageName.h"
@@ -515,6 +517,56 @@ namespace JsonAssetSync::PackagingPreflightPrivate
 			}
 		}
 
+
+		for (int32 bindingIndex = 0;
+			bindingIndex < registry->curveTableBindings.Num();
+			++bindingIndex)
+		{
+			const FJsonCurveTableBinding& binding =
+				registry->curveTableBindings[bindingIndex];
+
+			if (!IsValid(binding.targetCurveTable))
+			{
+				AddIssue(
+					inOutReport,
+					EJsonApplyIssueSeverity::Error,
+					FString::Printf(
+						TEXT(
+							"CurveTable Binding %d에 대상 "
+							"CurveTable이 지정되어 있지 않습니다."
+						),
+						bindingIndex
+					),
+					binding.jsonRelativePath
+				);
+			}
+		}
+
+
+		for (int32 bindingIndex = 0;
+			bindingIndex < registry->floatCurveBindings.Num();
+			++bindingIndex)
+		{
+			const FJsonFloatCurveBinding& binding =
+				registry->floatCurveBindings[bindingIndex];
+
+			if (!IsValid(binding.targetFloatCurve))
+			{
+				AddIssue(
+					inOutReport,
+					EJsonApplyIssueSeverity::Error,
+					FString::Printf(
+						TEXT(
+							"FloatCurve Binding %d에 대상 "
+							"Curve Float가 지정되어 있지 않습니다."
+						),
+						bindingIndex
+					),
+					binding.jsonRelativePath
+				);
+			}
+		}
+
 		for (int32 bindingIndex = 0;
 			bindingIndex < registry->dataAssetBindings.Num();
 			++bindingIndex)
@@ -621,6 +673,98 @@ namespace JsonAssetSync::PackagingPreflightPrivate
 
 			transientDataTable->SetFlags(RF_Transient);
 			binding.targetDataTable = transientDataTable;
+		}
+
+
+		for (FJsonCurveTableBinding& binding :
+			transientRegistry->curveTableBindings)
+		{
+			UCurveTable* sourceCurveTable =
+				binding.targetCurveTable.Get();
+
+			if (!IsValid(sourceCurveTable))
+			{
+				continue;
+			}
+
+			const FName duplicateName =
+				MakeUniqueObjectName(
+					transientRegistry,
+					sourceCurveTable->GetClass(),
+					sourceCurveTable->GetFName()
+				);
+
+			UCurveTable* transientCurveTable =
+				DuplicateObject<UCurveTable>(
+					sourceCurveTable,
+					transientRegistry,
+					duplicateName
+				);
+
+			if (!IsValid(transientCurveTable))
+			{
+				AddIssue(
+					inOutReport,
+					EJsonApplyIssueSeverity::Error,
+					TEXT(
+						"패키징 Dry Run용 임시 CurveTable을 "
+						"복제하지 못했습니다."
+					),
+					binding.jsonRelativePath,
+					sourceCurveTable->GetPathName()
+				);
+
+				continue;
+			}
+
+			transientCurveTable->SetFlags(RF_Transient);
+			binding.targetCurveTable = transientCurveTable;
+		}
+
+
+		for (FJsonFloatCurveBinding& binding :
+			transientRegistry->floatCurveBindings)
+		{
+			UCurveFloat* sourceFloatCurve =
+				binding.targetFloatCurve.Get();
+
+			if (!IsValid(sourceFloatCurve))
+			{
+				continue;
+			}
+
+			const FName duplicateName =
+				MakeUniqueObjectName(
+					transientRegistry,
+					sourceFloatCurve->GetClass(),
+					sourceFloatCurve->GetFName()
+				);
+
+			UCurveFloat* transientFloatCurve =
+				DuplicateObject<UCurveFloat>(
+					sourceFloatCurve,
+					transientRegistry,
+					duplicateName
+				);
+
+			if (!IsValid(transientFloatCurve))
+			{
+				AddIssue(
+					inOutReport,
+					EJsonApplyIssueSeverity::Error,
+					TEXT(
+						"패키징 Dry Run용 임시 Curve Float를 "
+						"복제하지 못했습니다."
+					),
+					binding.jsonRelativePath,
+					sourceFloatCurve->GetPathName()
+				);
+
+				continue;
+			}
+
+			transientFloatCurve->SetFlags(RF_Transient);
+			binding.targetFloatCurve = transientFloatCurve;
 		}
 
 		for (FJsonDataAssetBinding& binding :
@@ -749,6 +893,20 @@ FJsonAssetSyncPackagingPreflight::Run(
 	EnsureNonUfsCopyDirectory(
 		packagingSettings,
 		settings->dataTableJsonDirectory,
+		autoConfigurePackagingSettings,
+		report
+	);
+
+	EnsureNonUfsCopyDirectory(
+		packagingSettings,
+		settings->curveTableJsonDirectory,
+		autoConfigurePackagingSettings,
+		report
+	);
+
+	EnsureNonUfsCopyDirectory(
+		packagingSettings,
+		settings->floatCurveJsonDirectory,
 		autoConfigurePackagingSettings,
 		report
 	);

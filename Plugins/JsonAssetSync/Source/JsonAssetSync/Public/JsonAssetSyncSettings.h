@@ -89,6 +89,49 @@ public:
 	)
 	FString dataTableJsonDirectory;
 
+
+	/**
+	 * 프로젝트 Content 폴더를 기준으로 하는
+	 * CurveTable JSON 루트 상대 경로다.
+	 *
+	 * 기본값:
+	 * CurveTables
+	 *
+	 * 실제 경로:
+	 * <Project>/Content/CurveTables
+	 */
+	UPROPERTY(
+		Config,
+		EditAnywhere,
+		Category = "Directories",
+		meta = (
+			DisplayName = "Curve Table JSON Directory",
+			ToolTip = "Content 폴더를 기준으로 하는 CurveTable JSON 루트 상대 경로입니다."
+		)
+	)
+	FString curveTableJsonDirectory;
+
+	/**
+	 * 프로젝트 Content 폴더를 기준으로 하는
+	 * Curve Float JSON 루트 상대 경로다.
+	 *
+	 * 기본값:
+	 * FloatCurves
+	 *
+	 * 실제 경로:
+	 * <Project>/Content/FloatCurves
+	 */
+	UPROPERTY(
+		Config,
+		EditAnywhere,
+		Category = "Directories",
+		meta = (
+			DisplayName = "Float Curve JSON Directory",
+			ToolTip = "Content 폴더를 기준으로 하는 Curve Float JSON 루트 상대 경로입니다."
+		)
+	)
+	FString floatCurveJsonDirectory;
+
 	/**
 	 * 프로젝트 Content 폴더를 기준으로 하는
 	 * DataAsset JSON 루트 상대 경로다.

@@ -62,6 +62,27 @@ private:
 	bool HandleDeferredEditorAutoApply(float deltaTime);
 
 	/**
+	 * Registry의 Binding이 에디터에서 변경됐을 때 호출된다.
+	 *
+	 * Target만 지정하고 JSON Relative Path를 비워둔 경우
+	 * 다음 Tick에서 자동 경로/초기 JSON/Manifest를 갱신한다.
+	 */
+	void HandleRegistryPropertyChanged(
+		UObject* changedObject,
+		struct FPropertyChangedEvent& propertyChangedEvent
+	);
+
+	/** Registry 변경 처리를 다음 Tick으로 한 번만 예약한다. */
+	void ScheduleDeferredManifestRefresh();
+
+	/**
+	 * 예약된 Registry 자동 경로/Manifest 갱신을 실행한다.
+	 *
+	 * @return 한 번 실행 후 해제하므로 false를 반환한다.
+	 */
+	bool HandleDeferredManifestRefresh(float deltaTime);
+
+	/**
 	 * JSON Asset Sync 전용 Message Log 목록을 등록한다.
 	 */
 	void RegisterMessageLog();
@@ -128,6 +149,22 @@ private:
 	void OpenMessageLog();
 
 	/**
+	 * Registry와 Unreal Reflection을 기준으로 외부 편집기용 Manifest를 갱신한다.
+	 *
+	 * @param forceRewrite true면 기존 내용과 같아도 다시 저장한다.
+	 * @param showSuccessNotification true면 성공 시 에디터 알림을 표시한다.
+	 */
+	void RefreshExternalDataManifest(
+		bool forceRewrite,
+		bool showSuccessNotification
+	);
+
+	/**
+	 * Tools → Rebuild External Data Manifest를 눌렀을 때 강제로 다시 생성한다.
+	 */
+	void ExecuteRebuildExternalDataManifest();
+
+	/**
 	 * Tools 메뉴에 Apply JSON 항목 하나를 등록한다.
 	 */
 	void RegisterToolMenus();
@@ -179,6 +216,16 @@ private:
 	 * Core Ticker Delegate Handle이다.
 	 */
 	FTSTicker::FDelegateHandle deferredEditorAutoApplyHandle;
+
+	/**
+	 * Registry Property 변경 감시 Delegate Handle이다.
+	 */
+	FDelegateHandle registryPropertyChangedHandle;
+
+	/**
+	 * Registry 변경 후 다음 Tick에 Manifest/JSON 갱신을 실행하는 Ticker Handle이다.
+	 */
+	FTSTicker::FDelegateHandle deferredManifestRefreshHandle;
 
 	/**
 	 * ToolMenus의 안전한 메뉴 등록 콜백 Handle이다.

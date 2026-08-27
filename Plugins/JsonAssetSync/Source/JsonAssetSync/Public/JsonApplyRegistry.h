@@ -5,6 +5,8 @@
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
 #include "Engine/DataTable.h"
+#include "Engine/CurveTable.h"
+#include "Curves/CurveFloat.h"
 #include "JsonApplyRegistry.generated.h"
 
 /**
@@ -64,6 +66,100 @@ public:
 			)
 	)
 	TObjectPtr<UDataTable> targetDataTable = nullptr;
+};
+
+
+/**
+ * CurveTable용 JSON 파일과 대상 CurveTable 에셋을 연결한다.
+ *
+ * jsonRelativePath는 Content/CurveTables를 기준으로 작성한다.
+ *
+ * JSON Relative Path를 비워두고 Target Curve Table만 지정하면
+ * 에디터 Manifest 갱신 시 Target 이름을 기준으로 경로와 초기 JSON을 자동 생성한다.
+ */
+USTRUCT(BlueprintType)
+struct JSONASSETSYNC_API FJsonCurveTableBinding
+{
+	GENERATED_BODY()
+
+public:
+	/**
+	 * Content/CurveTables 폴더를 기준으로 하는 JSON 상대 경로다.
+	 */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadOnly,
+		Category = "JSON Asset Sync|Binding",
+		meta = (
+			DisplayName = "JSON Relative Path",
+			ToolTip = "Content/CurveTables 폴더를 기준으로 하는 JSON 상대 경로입니다. 비워두면 Target Curve Table 이름으로 자동 생성합니다."
+			)
+	)
+	FString jsonRelativePath;
+
+	/**
+	 * JSON 값을 적용할 실제 CurveTable 에셋이다.
+	 *
+	 * 외부 JSON은 CurveTable의 Row/Key 값 데이터를 소유하며,
+	 * JSON Import 시 대상 CurveTable의 ImportCurveInterpMode를 사용한다.
+	 */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadOnly,
+		Category = "JSON Asset Sync|Binding",
+		meta = (
+			DisplayName = "Target Curve Table",
+			ToolTip = "JSON 값을 적용할 대상 CurveTable 에셋입니다."
+			)
+	)
+	TObjectPtr<UCurveTable> targetCurveTable = nullptr;
+};
+
+
+/**
+ * Curve Float(UCurveFloat)용 JSON 파일과 대상 에셋을 연결한다.
+ *
+ * jsonRelativePath는 Content/FloatCurves를 기준으로 작성한다.
+ *
+ * JSON Relative Path를 비워두고 Target Float Curve만 지정하면
+ * 에디터 Manifest 갱신 시 Target 이름을 기준으로 경로와 초기 JSON을 자동 생성한다.
+ */
+USTRUCT(BlueprintType)
+struct JSONASSETSYNC_API FJsonFloatCurveBinding
+{
+	GENERATED_BODY()
+
+public:
+	/**
+	 * Content/FloatCurves 폴더를 기준으로 하는 JSON 상대 경로다.
+	 */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadOnly,
+		Category = "JSON Asset Sync|Binding",
+		meta = (
+			DisplayName = "JSON Relative Path",
+			ToolTip = "Content/FloatCurves 폴더를 기준으로 하는 JSON 상대 경로입니다. 비워두면 Target Float Curve 이름으로 자동 생성합니다."
+			)
+	)
+	FString jsonRelativePath;
+
+	/**
+	 * JSON 값을 적용할 실제 Curve Float 에셋이다.
+	 *
+	 * UCurveFloat 내부의 FRichCurve 전체 값을 JSON과 동기화하므로
+	 * Key Time/Value뿐 아니라 Interp/Tangent 정보도 보존할 수 있다.
+	 */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadOnly,
+		Category = "JSON Asset Sync|Binding",
+		meta = (
+			DisplayName = "Target Float Curve",
+			ToolTip = "JSON 값을 적용할 Curve Float(UCurveFloat) 에셋입니다."
+			)
+	)
+	TObjectPtr<UCurveFloat> targetFloatCurve = nullptr;
 };
 
 /**
@@ -151,6 +247,35 @@ public:
 			)
 	)
 	TArray<FJsonDataTableBinding> dataTableBindings;
+
+
+	/**
+	 * Content/CurveTables 내부의 JSON과 대상 CurveTable 연결 목록이다.
+	 */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadOnly,
+		Category = "JSON Asset Sync|Bindings",
+		meta = (
+			DisplayName = "Curve Table Bindings",
+			TitleProperty = "jsonRelativePath"
+			)
+	)
+	TArray<FJsonCurveTableBinding> curveTableBindings;
+
+	/**
+	 * Content/FloatCurves 내부의 JSON과 대상 Curve Float 연결 목록이다.
+	 */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadOnly,
+		Category = "JSON Asset Sync|Bindings",
+		meta = (
+			DisplayName = "Float Curve Bindings",
+			TitleProperty = "jsonRelativePath"
+			)
+	)
+	TArray<FJsonFloatCurveBinding> floatCurveBindings;
 
 	/**
 	 * Content/DataAssets 내부의 JSON과 대상 DataAsset 연결 목록이다.

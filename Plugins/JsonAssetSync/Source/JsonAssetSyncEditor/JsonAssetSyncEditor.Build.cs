@@ -60,6 +60,12 @@ public class JsonAssetSyncEditor : ModuleRules
 				"DataValidation",
 
 				/*
+				 * 외부 데이터 편집기용 Manifest JSON 생성에 필요하다.
+				 */
+				"Json",
+				"JsonUtilities",
+
+				/*
 				 * 에디터 상단 Tools 메뉴에
 				 * Apply JSON 항목을 추가하는 데 필요하다.
 				 */

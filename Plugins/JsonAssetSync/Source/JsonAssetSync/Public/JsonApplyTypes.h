@@ -47,6 +47,12 @@ enum class EJsonApplyTargetType : uint8
 	/** 대상이 UDataTable인 경우다. */
 	DataTable UMETA(DisplayName = "Data Table"),
 
+	/** 대상이 UCurveTable인 경우다. */
+	CurveTable UMETA(DisplayName = "Curve Table"),
+
+	/** 대상이 UCurveFloat인 경우다. */
+	FloatCurve UMETA(DisplayName = "Float Curve"),
+
 	/** 대상이 UDataAsset 계열인 경우다. */
 	DataAsset UMETA(DisplayName = "Data Asset")
 };
