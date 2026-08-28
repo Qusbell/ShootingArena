@@ -93,4 +93,36 @@ public:
 		float& OutPeakValue
 	);
 
+
+	/**
+	 * 점프패드용: StartPos -> EndPos 에 정확히 도달하는 발사 속도를 계산합니다.
+	 * 상승 구간(Vz>0)과 하강 구간(Vz<=0)의 GravityScale 을 다르게 줄 수 있어
+	 * "빠르게 솟구쳐서 느긋하게 낙하" 같은 비대칭 포물선을 목표 착지 정확도를 유지한 채 만듭니다.
+	 * 실제로 이 궤적을 타려면 런타임에서 캐릭터가 Vz 부호에 따라 GravityScale 을
+	 * Rise/Fall 로 전환해야 합니다 (UJumpPadFlightComponent).
+	 *
+	 * StartPos == EndPos 수평거리가 0이면 수직으로만 발사됩니다.
+	 *
+	 * @param WorldContextObject   월드 컨텍스트 (BP 에서 Self)
+	 * @param StartPos             발사 시작 위치 (보통 캐릭터 위치)
+	 * @param EndPos               목표 착지 위치
+	 * @param OutLaunchVelocity    LaunchCharacter 에 넣을 발사 속도 (bXYOverride / bZOverride = true)
+	 * @param RiseGravityScale     상승 중 적용할 GravityScale. 클수록 빠르게 솟고 수평속도도 빨라짐
+	 * @param FallGravityScale     하강 중 적용할 GravityScale. 작을수록 느긋하게 낙하
+	 * @param ApexHeight           더 높은 끝점 기준 최고점 여유 높이(cm). 클수록 붕 뜨는 궤적
+	 * @return 유효한 궤적이 나오면 true
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Gameplay|JumpPad",
+		meta = (WorldContext = "WorldContextObject",
+			Keywords = "jumppad launch ballistic arc suggest projectile velocity gravity"))
+	static bool SuggestJumpPadVelocity(
+		UObject* WorldContextObject,
+		FVector StartPos,
+		FVector EndPos,
+		FVector& OutLaunchVelocity,
+		float RiseGravityScale = 3.0f,
+		float FallGravityScale = 0.8f,
+		float ApexHeight = 250.0f
+	);
+
 };
