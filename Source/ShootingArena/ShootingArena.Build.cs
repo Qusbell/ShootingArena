@@ -4,27 +4,40 @@ using UnrealBuildTool;
 
 public class ShootingArena : ModuleRules
 {
-	public ShootingArena(ReadOnlyTargetRules Target) : base(Target)
-	{
-		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
-	
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "NavigationSystem", "AIModule", "DeveloperSettings" } );
+    public ShootingArena(ReadOnlyTargetRules Target) : base(Target)
+    {
+        PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
-		PrivateDependencyModuleNames.AddRange(new string[] {  });
+        PublicDependencyModuleNames.AddRange(new string[]
+        {
+            "Core",
+            "CoreUObject",
+            "Engine",
+            "InputCore",
+            "NavigationSystem",
+            "AIModule",
+            "DeveloperSettings"
+        });
 
-		// PathLink의 Editor 전용 중복 배치 가드레일에서 PIE를 즉시 종료하기 위해 사용합니다.
-		// 패키징 빌드에는 UnrealEd가 포함되지 않도록 Editor Target에서만 의존성을 추가합니다.
-		if (Target.bBuildEditor)
-		{
-			PrivateDependencyModuleNames.Add("UnrealEd");
-		}
+        PrivateDependencyModuleNames.AddRange(new string[] { });
 
-		// Uncomment if you are using Slate UI
-		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
-		
-		// Uncomment if you are using online features
-		// PrivateDependencyModuleNames.Add("OnlineSubsystem");
+        // Editor에서만 사용하는 기능입니다.
+        // Shipping/패키징 빌드에는 UnrealEd와 GameplayValidatorEditor가 포함되지 않습니다.
+        if (Target.bBuildEditor)
+        {
+            PrivateDependencyModuleNames.AddRange(new string[]
+            {
+                "UnrealEd",
+                "GameplayValidatorEditor"
+            });
+        }
 
-		// To include OnlineSubsystemSteam, add it to the plugins section in your uproject file with the Enabled attribute set to true
-	}
+        // Uncomment if you are using Slate UI
+        // PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
+
+        // Uncomment if you are using online features
+        // PrivateDependencyModuleNames.Add("OnlineSubsystem");
+
+        // To include OnlineSubsystemSteam, add it to the plugins section in your uproject file with the Enabled attribute set to true
+    }
 }
