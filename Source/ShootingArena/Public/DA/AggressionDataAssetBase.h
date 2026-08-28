@@ -1,7 +1,12 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+
+#if WITH_EDITOR
+#include "Misc/DataValidation.h"
+#endif
+
 #include "AggressionDataAssetBase.generated.h"
 
 
@@ -13,7 +18,6 @@ class SHOOTINGARENA_API UAggressionDataAssetBase : public UPrimaryDataAsset
 public:
 
     // 높이 차이를 점수화할 때 사용하는 기준값
-    // 기본값: 200
     UPROPERTY(
         EditDefaultsOnly,
         BlueprintReadOnly,
@@ -23,8 +27,7 @@ public:
     float HeightStandard = 200.0f;
 
 
-    // 공격성 점수에서 높이 점수가 차지하는 비중
-    // 기본값: 0.15
+    // 최종 공격성 점수에서 높이 점수가 차지하는 비중
     UPROPERTY(
         EditDefaultsOnly,
         BlueprintReadOnly,
@@ -34,8 +37,7 @@ public:
     float HeightWeight = 0.15f;
 
 
-    // 공격성 점수에서 생존 점수가 차지하는 비중
-    // 기본값: 0.45
+    // 최종 공격성 점수에서 생존 점수가 차지하는 비중
     UPROPERTY(
         EditDefaultsOnly,
         BlueprintReadOnly,
@@ -45,8 +47,7 @@ public:
     float SurvivalWeight = 0.45f;
 
 
-    // 공격성 점수에서 총기 점수가 차지하는 비중
-    // 기본값: 0.4
+    // 최종 공격성 점수에서 무기 점수가 차지하는 비중
     UPROPERTY(
         EditDefaultsOnly,
         BlueprintReadOnly,
@@ -56,8 +57,7 @@ public:
     float WeaponWeight = 0.4f;
 
 
-    // 생존 점수에서 체력 비율이 차지하는 비중
-    // 기본값: 0.7
+    // 생존 점수에서 체력이 차지하는 비중
     UPROPERTY(
         EditDefaultsOnly,
         BlueprintReadOnly,
@@ -67,8 +67,7 @@ public:
     float HealthWeight = 0.7f;
 
 
-    // 생존 점수에서 방어구 비율이 차지하는 비중
-    // 기본값: 0.3
+    // 생존 점수에서 방어구가 차지하는 비중
     UPROPERTY(
         EditDefaultsOnly,
         BlueprintReadOnly,
@@ -78,8 +77,7 @@ public:
     float ArmorWeight = 0.3f;
 
 
-    // 총기 기본 점수를 0~1 범위로 변환할 때 사용하는 최대값
-    // 기본값: 1000
+    // 무기 점수를 0~1 범위로 정규화할 때 사용하는 최대값
     UPROPERTY(
         EditDefaultsOnly,
         BlueprintReadOnly,
@@ -93,9 +91,33 @@ public:
 
 public:
 
+    virtual void PostEditChangeProperty(
+        FPropertyChangedEvent& PropertyChangedEvent
+    ) override;
+
+
     virtual EDataValidationResult IsDataValid(
         FDataValidationContext& Context
     ) const override;
+
+
+private:
+
+    void ShowValidationNotification(
+        const FText& Message,
+        TWeakPtr<SNotificationItem>& Notification
+    );
+
+    void DismissValidationNotification(
+        TWeakPtr<SNotificationItem>& Notification
+    );
+
+
+    // 공격성 Weight용 경고
+    TWeakPtr<SNotificationItem> AggressionWeightNotification;
+
+    // 생존 Weight용 경고
+    TWeakPtr<SNotificationItem> SurvivalWeightNotification;
 
 #endif
 };

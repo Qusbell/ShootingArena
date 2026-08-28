@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 using UnrealBuildTool;
 
@@ -8,7 +8,17 @@ public class ShootingArena : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 	
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "NavigationSystem", "AIModule", "DeveloperSettings" } );
+		PublicDependencyModuleNames.AddRange(new string[] {
+			"Core",
+			"CoreUObject",
+			"Engine",
+			"InputCore",
+			"NavigationSystem",
+			"AIModule",
+			"DeveloperSettings",
+            "Slate",
+			"SlateCore"
+        } );
 
 		PrivateDependencyModuleNames.AddRange(new string[] {  });
 
