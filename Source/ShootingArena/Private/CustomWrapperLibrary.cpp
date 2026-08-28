@@ -300,3 +300,62 @@ bool UCustomWrapperLibrary::GetPeakKeyFromRuntimeFloatCurve(
 
 	return true;
 }
+
+
+bool UCustomWrapperLibrary::SuggestJumpPadVelocity(
+	UObject* WorldContextObject,
+	FVector StartPos,
+	FVector EndPos,
+	FVector& OutLaunchVelocity,
+	float RiseGravityScale,
+	float FallGravityScale,
+	float ApexHeight)
+{
+	OutLaunchVelocity = FVector::ZeroVector;
+
+	const UWorld* World = GEngine
+		? GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull)
+		: nullptr;
+	if (!World)
+	{
+		return false;
+	}
+
+	// 상승/하강 각 구간의 실제 중력 가속도 크기 (양수)
+	const float WorldG = FMath::Abs(World->GetGravityZ());
+	const float GUp = WorldG * FMath::Abs(RiseGravityScale);
+	const float GDown = WorldG * FMath::Abs(FallGravityScale);
+
+	if (GUp <= KINDA_SMALL_NUMBER || GDown <= KINDA_SMALL_NUMBER || ApexHeight <= 0.0f)
+	{
+		return false;
+	}
+
+	const FVector Delta = EndPos - StartPos;
+	const FVector DeltaXY(Delta.X, Delta.Y, 0.0f);
+	const float Dxy = DeltaXY.Size();
+	const float H = Delta.Z; // 시작점 대비 목표점의 높이차 (부호 있음)
+
+	// 시작점 기준 최고점 높이: 더 높은 끝점 위로 ApexHeight 만큼
+	const float h = FMath::Max(0.0f, H) + ApexHeight; // (h - H) 는 항상 양수
+
+	// 상승 구간: 최고점까지 올라가는 데 필요한 초기 수직속도와 시간
+	const float VzUp = FMath::Sqrt(2.0f * GUp * h);
+	const float tUp = VzUp / GUp;
+
+	// 하강 구간: 최고점에서 목표 높이까지 떨어지는 시간 (중력 GDown)
+	const float tDown = FMath::Sqrt(2.0f * (h - H) / GDown);
+
+	const float T = tUp + tDown;
+	if (T <= KINDA_SMALL_NUMBER)
+	{
+		return false;
+	}
+
+	// 수평속도는 전체 비행시간 동안 일정 (공기저항 없음)
+	const FVector DirXY = (Dxy > KINDA_SMALL_NUMBER) ? (DeltaXY / Dxy) : FVector::ZeroVector;
+	const float Vx = Dxy / T;
+
+	OutLaunchVelocity = DirXY * Vx + FVector(0.0f, 0.0f, VzUp);
+	return true;
+}
