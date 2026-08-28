@@ -16,13 +16,15 @@ public class ShootingArena : ModuleRules
             "InputCore",
             "NavigationSystem",
             "AIModule",
-            "DeveloperSettings"
+            "DeveloperSettings",
+            "Slate",
+            "SlateCore"
         });
 
         PrivateDependencyModuleNames.AddRange(new string[] { });
 
-        // Editor에서만 사용하는 기능입니다.
-        // Shipping/패키징 빌드에는 UnrealEd와 GameplayValidatorEditor가 포함되지 않습니다.
+        // Editor 전용 기능입니다.
+        // 패키징/Shipping 빌드에는 UnrealEd와 GameplayValidatorEditor가 포함되지 않습니다.
         if (Target.bBuildEditor)
         {
             PrivateDependencyModuleNames.AddRange(new string[]
@@ -32,12 +34,10 @@ public class ShootingArena : ModuleRules
             });
         }
 
-        // Uncomment if you are using Slate UI
-        // PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
-
         // Uncomment if you are using online features
         // PrivateDependencyModuleNames.Add("OnlineSubsystem");
 
-        // To include OnlineSubsystemSteam, add it to the plugins section in your uproject file with the Enabled attribute set to true
+        // To include OnlineSubsystemSteam, add it to the plugins section in your uproject file
+        // with the Enabled attribute set to true
     }
 }
