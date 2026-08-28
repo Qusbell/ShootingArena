@@ -1,0 +1,19 @@
+{
+  "FileVersion": 3,
+  "Version": 1,
+  "VersionName": "1.0.0",
+  "FriendlyName": "Gameplay Validator",
+  "Description": "Editor-only validation tool for level-placed gameplay actors.",
+  "Category": "Level Design",
+  "CreatedBy": "ShootingArena Team",
+  "CanContainContent": false,
+  "IsBetaVersion": true,
+  "Installed": false,
+  "Modules": [
+    {
+      "Name": "GameplayValidatorEditor",
+      "Type": "Editor",
+      "LoadingPhase": "Default"
+    }
+  ]
+}
