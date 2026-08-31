@@ -302,6 +302,85 @@ bool UCustomWrapperLibrary::GetPeakKeyFromRuntimeFloatCurve(
 }
 
 
+namespace
+{
+	// 비대칭 중력(GUp: 상승, GDown: 하강)에서, 수평 기준 발사각 AngleRad 을 고정했을 때
+	// 수평거리 Dxy / 높이차 H 지점에 정확히 도달하는 초기 수직속도 Vz(>0) 를 구한다.
+	// 그 각도로는 도달 불가능하면(목표가 조준선 위) false.
+	bool SolveVzForLaunchAngle(float Dxy, float H, float GUp, float GDown, float AngleRad, float& OutVz)
+	{
+		const float TanA = FMath::Tan(AngleRad);
+		if (TanA <= KINDA_SMALL_NUMBER || Dxy <= KINDA_SMALL_NUMBER)
+		{
+			return false;
+		}
+
+		// 물리적 상한: 궤적은 항상 조준선(y = x·tanθ) 아래에 있다.
+		// 목표가 그보다 높으면 어떤 속도로도 그 각도로는 도달 불가.
+		const float AimLineH = Dxy * TanA;
+		if (H >= AimLineH)
+		{
+			return false;
+		}
+
+		// 목표를 최고점 이전(상승 중)에 맞추는지, 이후(하강 중)에 맞추는지의 경계는
+		// H == AimLineH / 2 이다.
+		if (H >= 0.5f * AimLineH)
+		{
+			// 상승 구간에서 명중 → 그 구간 중력은 GUp 뿐이라 닫힌 해가 존재한다.
+			//   Vz^2 = GUp · Dxy^2 · tan^2θ / ( 2·(Dxy·tanθ - H) )
+			const float Vz2 = (GUp * Dxy * Dxy * TanA * TanA) / (2.0f * (AimLineH - H));
+			OutVz = FMath::Sqrt(FMath::Max(0.0f, Vz2));
+			return true;
+		}
+
+		// 하강 구간에서 명중 → 상승 GUp / 하강 GDown 이 섞이므로 수치해(이분 탐색).
+		// 수평 도달거리 오차: Vxy = Vz·cotθ, 비행시간 T = tUp + tDown, 이 구간에서 Vz 에 단조증가.
+		const float CotA = 1.0f / TanA;
+		auto FlightError = [=](float Vz) -> float
+		{
+			const float ApexAboveStart = (Vz * Vz) / (2.0f * GUp);
+			const float Drop = ApexAboveStart - H; // 최고점에서 목표 높이까지의 낙하량
+			if (Drop <= 0.0f)
+			{
+				return -Dxy; // 최고점이 목표보다 낮음 → 음수 반환으로 Vz 를 더 키우게 함
+			}
+			const float tUp = Vz / GUp;
+			const float tDown = FMath::Sqrt(2.0f * Drop / GDown);
+			return (Vz * CotA) * (tUp + tDown) - Dxy;
+		};
+
+		float Lo = FMath::Sqrt(2.0f * GUp * FMath::Max(0.0f, H)) + 1.0f;
+		float Hi = FMath::Max(Lo, 1.0f);
+
+		int32 Guard = 0;
+		while (FlightError(Hi) < 0.0f)
+		{
+			Hi *= 2.0f;
+			if (++Guard > 64)
+			{
+				return false; // 발산 방지 (정상 입력에서는 도달하지 않음)
+			}
+		}
+
+		for (int32 i = 0; i < 60; ++i)
+		{
+			const float Mid = 0.5f * (Lo + Hi);
+			if (FlightError(Mid) > 0.0f)
+			{
+				Hi = Mid;
+			}
+			else
+			{
+				Lo = Mid;
+			}
+		}
+		OutVz = 0.5f * (Lo + Hi);
+		return true;
+	}
+}
+
+
 bool UCustomWrapperLibrary::SuggestJumpPadVelocity(
 	UObject* WorldContextObject,
 	FVector StartPos,
@@ -309,7 +388,9 @@ bool UCustomWrapperLibrary::SuggestJumpPadVelocity(
 	FVector& OutLaunchVelocity,
 	float RiseGravityScale,
 	float FallGravityScale,
-	float ApexHeight)
+	float ApexHeight,
+	EJumpPadArcMode ArcMode,
+	float LaunchAngleDeg)
 {
 	OutLaunchVelocity = FVector::ZeroVector;
 
@@ -326,7 +407,7 @@ bool UCustomWrapperLibrary::SuggestJumpPadVelocity(
 	const float GUp = WorldG * FMath::Abs(RiseGravityScale);
 	const float GDown = WorldG * FMath::Abs(FallGravityScale);
 
-	if (GUp <= KINDA_SMALL_NUMBER || GDown <= KINDA_SMALL_NUMBER || ApexHeight <= 0.0f)
+	if (GUp <= KINDA_SMALL_NUMBER || GDown <= KINDA_SMALL_NUMBER)
 	{
 		return false;
 	}
@@ -335,27 +416,49 @@ bool UCustomWrapperLibrary::SuggestJumpPadVelocity(
 	const FVector DeltaXY(Delta.X, Delta.Y, 0.0f);
 	const float Dxy = DeltaXY.Size();
 	const float H = Delta.Z; // 시작점 대비 목표점의 높이차 (부호 있음)
+	const FVector DirXY = (Dxy > KINDA_SMALL_NUMBER) ? (DeltaXY / Dxy) : FVector::ZeroVector;
 
-	// 시작점 기준 최고점 높이: 더 높은 끝점 위로 ApexHeight 만큼
-	const float h = FMath::Max(0.0f, H) + ApexHeight; // (h - H) 는 항상 양수
+	float VzUp = 0.0f; // 초기 수직속도
+	float Vxy = 0.0f;  // 수평속도 크기 (비행 내내 일정)
 
-	// 상승 구간: 최고점까지 올라가는 데 필요한 초기 수직속도와 시간
-	const float VzUp = FMath::Sqrt(2.0f * GUp * h);
-	const float tUp = VzUp / GUp;
-
-	// 하강 구간: 최고점에서 목표 높이까지 떨어지는 시간 (중력 GDown)
-	const float tDown = FMath::Sqrt(2.0f * (h - H) / GDown);
-
-	const float T = tUp + tDown;
-	if (T <= KINDA_SMALL_NUMBER)
+	// 수평거리가 사실상 0이면 발사각 개념이 무의미하므로 ApexHeight 로 폴백
+	if (ArcMode == EJumpPadArcMode::LaunchAngle && Dxy > 1.0f)
 	{
-		return false;
+		const float AngleRad = FMath::DegreesToRadians(FMath::Clamp(LaunchAngleDeg, 1.0f, 89.0f));
+		if (!SolveVzForLaunchAngle(Dxy, H, GUp, GDown, AngleRad, VzUp))
+		{
+			return false; // 그 각도로는 목표 지점에 도달할 수 없음
+		}
+		Vxy = VzUp / FMath::Tan(AngleRad);
+	}
+	else
+	{
+		// 기존 방식: 최고점 높이(ApexHeight)로 궤적을 결정하고 발사각은 결과로 둔다.
+		if (ApexHeight <= 0.0f)
+		{
+			return false;
+		}
+
+		// 시작점 기준 최고점 높이: 더 높은 끝점 위로 ApexHeight 만큼
+		const float h = FMath::Max(0.0f, H) + ApexHeight; // (h - H) 는 항상 양수
+
+		// 상승 구간: 최고점까지 올라가는 데 필요한 초기 수직속도와 시간
+		VzUp = FMath::Sqrt(2.0f * GUp * h);
+		const float tUp = VzUp / GUp;
+
+		// 하강 구간: 최고점에서 목표 높이까지 떨어지는 시간 (중력 GDown)
+		const float tDown = FMath::Sqrt(2.0f * (h - H) / GDown);
+
+		const float T = tUp + tDown;
+		if (T <= KINDA_SMALL_NUMBER)
+		{
+			return false;
+		}
+
+		// 수평속도는 전체 비행시간 동안 일정 (공기저항 없음)
+		Vxy = Dxy / T;
 	}
 
-	// 수평속도는 전체 비행시간 동안 일정 (공기저항 없음)
-	const FVector DirXY = (Dxy > KINDA_SMALL_NUMBER) ? (DeltaXY / Dxy) : FVector::ZeroVector;
-	const float Vx = Dxy / T;
-
-	OutLaunchVelocity = DirXY * Vx + FVector(0.0f, 0.0f, VzUp);
+	OutLaunchVelocity = DirXY * Vxy + FVector(0.0f, 0.0f, VzUp);
 	return true;
 }
