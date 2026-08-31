@@ -123,7 +123,7 @@ void ADeathCamActor::CacheSettings(UDeathCamDataAsset* inDeathCamData)
 	centerOffset = inDeathCamData->centerOffset;
 	cameraMoveInterpSpeed = inDeathCamData->cameraMoveInterpSpeed;
 	bEnableKillerHighlight = inDeathCamData->bEnableKillerHighlight;
-	killerHighlightMaterial = inDeathCamData->killerHighlightMaterial;
+	killerHighlightMaterial = inDeathCamData->GetKillerHighlightMaterial();
 	killerHighlightStencilValue = inDeathCamData->killerHighlightStencilValue;
 
 	// Legacy OrbitDistance는 최종 기획에서 제거했습니다.
@@ -388,7 +388,7 @@ void ADeathCamActor::ApplyKillerHighlightPostProcess()
 		if (bEnableKillerHighlight && !IsValid(killerHighlightMaterial))
 		{
 			UE_LOG(LogDeathCamActor, Warning,
-				TEXT("Killer Highlight is enabled, but killerHighlightMaterial is not assigned in DeathCamDataAsset."));
+				TEXT("Killer Highlight is enabled, but the Material for the selected Highlight Type is not assigned in DeathCamDataAsset."));
 		}
 		return;
 	}
@@ -408,33 +408,108 @@ void ADeathCamActor::ApplyKillerHighlightPostProcess()
 
 void ADeathCamActor::ApplyKillerHighlight()
 {
+	// DeathCam이 다시 시작되는 경우를 대비해,
+	// 이전 Highlight 대상의 CustomDepth / Stencil 상태를 먼저 원래 값으로 복구합니다.
 	RemoveKillerHighlight();
 
+	// Highlight 기능이 비활성화되어 있거나 Killer가 유효하지 않으면 처리하지 않습니다.
 	if (!bEnableKillerHighlight || !IsValid(otherActor))
 	{
 		return;
 	}
 
-	TInlineComponentArray<UPrimitiveComponent*> primitiveComponents;
-	otherActor->GetComponents(primitiveComponents);
-	killerHighlightStates.Reserve(primitiveComponents.Num());
+	/**
+	 * 지정한 Actor의 모든 PrimitiveComponent에
+	 * DeathCam Highlight용 CustomDepth / Stencil 값을 적용합니다.
+	 *
+	 * 적용 전에 각 Component의 기존 CustomDepth / Stencil 상태를 저장해 두며,
+	 * DeathCam 종료 시 RemoveKillerHighlight()에서 원래 상태로 복구합니다.
+	 *
+	 * Killer 본체와 장착 무기에는 동일한 Stencil 값을 적용합니다.
+	 * 이를 통해 장착 무기가 Killer의 몸을 가리고 있어도
+	 * 무기를 별도의 장애물로 잘못 판단하지 않도록 합니다.
+	 */
+	auto ApplyStencilToActor =
+		[this](AActor* targetActor, const int32 stencilValue)
+		{
+			if (!IsValid(targetActor))
+			{
+				return;
+			}
 
-	for (UPrimitiveComponent* primitiveComponent : primitiveComponents)
+			// Actor에 포함된 모든 PrimitiveComponent를 가져옵니다.
+			TInlineComponentArray<UPrimitiveComponent*> primitiveComponents;
+			targetActor->GetComponents(primitiveComponents);
+
+			// 저장 배열의 재할당을 줄이기 위해 필요한 크기를 미리 확보합니다.
+			killerHighlightStates.Reserve(
+				killerHighlightStates.Num() + primitiveComponents.Num());
+
+			for (UPrimitiveComponent* primitiveComponent : primitiveComponents)
+			{
+				if (!IsValid(primitiveComponent))
+				{
+					continue;
+				}
+
+				FHighlightComponentState& state =
+					killerHighlightStates.AddDefaulted_GetRef();
+
+				// DeathCam 종료 후 원래 상태로 되돌릴 수 있도록
+				// 현재 CustomDepth / Stencil 설정을 저장합니다.
+				state.component = primitiveComponent;
+				state.bRenderCustomDepth = primitiveComponent->bRenderCustomDepth;
+				state.customDepthStencilValue = primitiveComponent->CustomDepthStencilValue;
+
+				// DeathCam Post Process Material에서 Killer 그룹으로 인식할 수 있도록
+				// CustomDepth와 지정된 Stencil 값을 적용합니다.
+				primitiveComponent->SetRenderCustomDepth(true);
+				primitiveComponent->SetCustomDepthStencilValue(stencilValue);
+			}
+		};
+
+	// Killer 본체에 DeathCam Highlight용 Stencil 값을 적용합니다.
+	ApplyStencilToActor(otherActor, killerHighlightStencilValue);
+
+	/**
+	 * 무기는 Killer와 별도의 Actor로 존재하면서 Character에 Attach되어 있으므로,
+	 * Killer의 Component만 조회해서는 Weapon Mesh를 처리할 수 없습니다.
+	 *
+	 * 따라서 Killer에게 Attach된 Actor를 별도로 탐색한 뒤,
+	 * DeathCamWeapon 태그가 지정된 Actor에도 동일한 Stencil 값을 적용합니다.
+	 */
+	TArray<AActor*> attachedActors;
+
+	otherActor->GetAttachedActors(
+		attachedActors,
+		true,   // 기존 배열 내용을 초기화한 뒤 결과를 저장합니다.
+		true    // 하위에 Attach된 Actor까지 재귀적으로 탐색합니다.
+	);
+
+	for (AActor* attachedActor : attachedActors)
 	{
-		if (!IsValid(primitiveComponent))
+		if (!IsValid(attachedActor))
 		{
 			continue;
 		}
 
-		FHighlightComponentState& state = killerHighlightStates.AddDefaulted_GetRef();
-		state.component = primitiveComponent;
-		state.bRenderCustomDepth = primitiveComponent->bRenderCustomDepth;
-		state.customDepthStencilValue = primitiveComponent->CustomDepthStencilValue;
+		// DeathCam Highlight 처리 대상인 장착 무기만 선택합니다.
+		if (!attachedActor->ActorHasTag(TEXT("DeathCamWeapon")))
+		{
+			continue;
+		}
 
-		// CustomDepth/Stencil을 활성화해 벽 뒤에서도 판별 가능한 Highlight 정보를 제공합니다.
-		// 실제 "붉은색" 표현은 프로젝트의 Post Process Material이 이 Stencil 값을 해석해야 합니다.
-		primitiveComponent->SetRenderCustomDepth(true);
-		primitiveComponent->SetCustomDepthStencilValue(killerHighlightStencilValue);
+		/**
+		 * 장착 무기도 Killer 본체와 동일한 Stencil 그룹으로 처리합니다.
+		 *
+		 * 무기가 화면에 직접 보이는 경우에는 SceneDepth와 CustomDepth가 거의 동일하므로
+		 * Occlusion 조건을 만족하지 않아 Highlight가 표시되지 않습니다.
+		 *
+		 * 반대로 Killer와 무기가 벽 뒤에 함께 가려진 경우에는
+		 * 둘을 하나의 연속된 Killer 실루엣으로 판단할 수 있어,
+		 * 무기와 몸이 겹치는 부분에서 Highlight가 끊기는 현상을 방지합니다.
+		 */
+		ApplyStencilToActor(attachedActor, killerHighlightStencilValue);
 	}
 }
 
