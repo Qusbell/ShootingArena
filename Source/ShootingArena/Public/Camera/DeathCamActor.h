@@ -145,7 +145,7 @@ private:
 	/** Camera가 어느 위치에 있든 Center를 바라보도록 회전을 갱신합니다. */
 	FRotator CalculateLookAtCenterRotation(const FVector& cameraLocation) const;
 
-	/** DataAsset에 지정된 Highlight Post Process Material을 이 DeathCam 카메라에만 적용합니다. */
+	/** DataAsset의 Highlight Type에 따라 선택된 Post Process Material을 이 DeathCam 카메라에만 적용합니다. */
 	void ApplyKillerHighlightPostProcess();
 
 	void ApplyKillerHighlight();

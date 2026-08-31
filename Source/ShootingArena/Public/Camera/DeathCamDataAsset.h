@@ -6,10 +6,24 @@
 #include "DeathCamDataAsset.generated.h"
 
 /**
- * DeathCam에서 디자이너가 조절할 값만 보관하는 DataAsset입니다.
- * 게임 로직/네트워크 로직은 이 클래스에 넣지 않습니다.
+ * DeathCam에서 Killer를 강조하는 표현 방식입니다.
  *
- * 최종 기획에서 실제로 사용하는 값만 유지합니다.
+ * Outline : 장애물에 가려진 Killer의 외곽선만 표시합니다.
+ * Fill    : 장애물에 가려진 Killer 실루엣 전체를 표시합니다.
+ */
+UENUM(BlueprintType)
+enum class EDeathCamKillerHighlightType : uint8
+{
+	Outline UMETA(DisplayName = "Outline"),
+	Fill UMETA(DisplayName = "Fill")
+};
+
+/**
+ * DeathCam에서 디자이너가 조절할 값만 보관하는 DataAsset입니다.
+ * 게임 로직 / 네트워크 로직은 이 클래스에 넣지 않습니다.
+ *
+ * Killer Highlight는 실제 Material을 직접 교체하는 대신
+ * killerHighlightType에서 Outline / Fill 중 하나를 선택해 사용합니다.
  */
 UCLASS(BlueprintType)
 class SHOOTINGARENA_API UDeathCamDataAsset : public UDataAsset
@@ -47,20 +61,45 @@ public:
 	// Killer Highlight
 	// ---------------------------------------------------------------------
 
-	/** Killer CustomDepth/Stencil 강조 사용 여부. */
+	/** Killer CustomDepth / Stencil 강조 사용 여부입니다. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DeathCam|KillerHighlight")
 	bool bEnableKillerHighlight = true;
 
 	/**
-	 * DeathCam 카메라에 적용할 Post Process Material입니다.
-	 * CustomStencil == killerHighlightStencilValue 인 픽셀을 붉게 표시하는 Material을 지정합니다.
+	 * Killer Highlight 표현 방식을 선택합니다.
+	 * 기획자는 실제 Post Process Material을 직접 교체하지 않고
+	 * Outline / Fill 두 가지 중 하나만 선택하면 됩니다.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DeathCam|KillerHighlight")
-	TObjectPtr<UMaterialInterface> killerHighlightMaterial = nullptr;
+	EDeathCamKillerHighlightType killerHighlightType = EDeathCamKillerHighlightType::Outline;
 
 	/** Killer Highlight에 사용할 Custom Stencil 값입니다. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DeathCam|KillerHighlight", meta = (ClampMin = "0", ClampMax = "255"))
 	int32 killerHighlightStencilValue = 1;
+
+	/**
+	 * 현재 선택된 Highlight Type에 대응하는 Post Process Material을 반환합니다.
+	 * DeathCamActor는 Material 종류를 직접 판단하지 않고 이 함수를 통해 가져옵니다.
+	 */
+	UMaterialInterface* GetKillerHighlightMaterial() const;
+
+	// ---------------------------------------------------------------------
+	// Killer Highlight - Setup
+	// ---------------------------------------------------------------------
+
+	/**
+	 * Outline 모드에서 사용할 Post Process Material입니다.
+	 * 시스템 초기 세팅용 값이므로 기획자는 일반적으로 수정할 필요가 없습니다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DeathCam|KillerHighlight|Setup")
+	TObjectPtr<UMaterialInterface> killerHighlightOutlineMaterial = nullptr;
+
+	/**
+	 * Fill 모드에서 사용할 Post Process Material입니다.
+	 * 시스템 초기 세팅용 값이므로 기획자는 일반적으로 수정할 필요가 없습니다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DeathCam|KillerHighlight|Setup")
+	TObjectPtr<UMaterialInterface> killerHighlightFillMaterial = nullptr;
 
 	// ---------------------------------------------------------------------
 	// Transition
