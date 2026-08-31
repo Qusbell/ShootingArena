@@ -23,6 +23,19 @@ enum class ENavPathTestResult : uint8
 
 
 
+/** 점프패드 궤적을 무엇으로 결정할지 선택 */
+UENUM(BlueprintType)
+enum class EJumpPadArcMode : uint8
+{
+	/** 최고점 여유 높이(ApexHeight)로 궤적을 결정. 발사각은 결과로 따라옴 (기존 방식) */
+	ApexHeight   UMETA(DisplayName = "Apex Height"),
+	/** 발사각(LaunchAngle, 수평 기준)을 고정하고 도달에 필요한 속도를 역산 */
+	LaunchAngle  UMETA(DisplayName = "Launch Angle")
+};
+
+
+
+
 /**
  * cpp에만 존재하는 기능들을 BP에서도 사용할 수 있도록 래핑하는 라이브러리
  */
@@ -109,12 +122,16 @@ public:
 	 * @param OutLaunchVelocity    LaunchCharacter 에 넣을 발사 속도 (bXYOverride / bZOverride = true)
 	 * @param RiseGravityScale     상승 중 적용할 GravityScale. 클수록 빠르게 솟고 수평속도도 빨라짐
 	 * @param FallGravityScale     하강 중 적용할 GravityScale. 작을수록 느긋하게 낙하
-	 * @param ApexHeight           더 높은 끝점 기준 최고점 여유 높이(cm). 클수록 붕 뜨는 궤적
+	 * @param ApexHeight           [ApexHeight 모드] 더 높은 끝점 기준 최고점 여유 높이(cm). 클수록 붕 뜨는 궤적
+	 * @param ArcMode              궤적 결정 방식. ApexHeight(기존) 또는 LaunchAngle
+	 * @param LaunchAngleDeg       [LaunchAngle 모드] 수평 기준 발사각(도, 1~89). 클수록 가파르게 솟는 궤적.
+	 *                             그 각도로 목표에 도달할 수 없으면 false 를 반환한다.
+	 *                             수평거리가 거의 0이면 이 모드는 무시되고 ApexHeight 로 폴백한다.
 	 * @return 유효한 궤적이 나오면 true
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Gameplay|JumpPad",
 		meta = (WorldContext = "WorldContextObject",
-			Keywords = "jumppad launch ballistic arc suggest projectile velocity gravity"))
+			Keywords = "jumppad launch ballistic arc suggest projectile velocity gravity angle"))
 	static bool SuggestJumpPadVelocity(
 		UObject* WorldContextObject,
 		FVector StartPos,
@@ -122,7 +139,9 @@ public:
 		FVector& OutLaunchVelocity,
 		float RiseGravityScale = 3.0f,
 		float FallGravityScale = 0.8f,
-		float ApexHeight = 250.0f
+		float ApexHeight = 250.0f,
+		EJumpPadArcMode ArcMode = EJumpPadArcMode::ApexHeight,
+		float LaunchAngleDeg = 60.0f
 	);
 
 };
