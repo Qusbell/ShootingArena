@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameFramework/GameModeBase.h"
+#include "MyReconnectionGameMode.h"
 #include "LobbyGameMode.generated.h"
 
 class ALobbyGameState;
@@ -9,9 +9,13 @@ class ALobbyGameState;
 /**
  * 대기 로비(LobbyLevel) 전용 GameMode.
  * 접속/퇴장 시 슬롯 배정과 방장 승계를 처리합니다.
+ *
+ * AMyReconnectionGameMode를 상속해서, 매치 서버로 접속할 때와 마찬가지로
+ * "open IP:7777?Nickname=..." 로 넘어오는 라이브 닉네임을 InitNewPlayer 단계에서
+ * 정상적으로 파싱/적용받습니다 (안 그러면 기본값인 "?Name=컴퓨터이름"으로 덮어써집니다).
  */
 UCLASS()
-class SHOOTINGARENA_API ALobbyGameMode : public AGameModeBase
+class SHOOTINGARENA_API ALobbyGameMode : public AMyReconnectionGameMode
 {
 	GENERATED_BODY()
 

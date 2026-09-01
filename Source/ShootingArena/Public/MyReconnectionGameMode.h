@@ -13,17 +13,17 @@ class IReconnectionInterface
 	GENERATED_BODY()
 
 public:
-	// ºí·çÇÁ¸°Æ®¿¡¼­ ÀÌ ÀÌº¥Æ®¸¦ ±¸ÇöÇÏ¿© ÅäÅ«À» º¯¼ö¿¡ ÀúÀåÇÏµµ·Ï ÇÕ´Ï´Ù.
+	// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ®ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½Ìºï¿½Æ®ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ï¿ï¿½ ï¿½ï¿½Å«ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ïµï¿½ï¿½ï¿½ ï¿½Õ´Ï´ï¿½.
 	UFUNCTION(BlueprintImplementableEvent, BlueprintCallable, Category = "Reconnection")
 	void SetConnectionToken(const FString& Token);
 
-	// ºí·çÇÁ¸°Æ®¿¡¼­ ÀúÀåµÈ ÅäÅ«À» C++ °ÔÀÓ¸ğµå¿¡°Ô ´Ù½Ã ¸®ÅÏÇØ ÁÖµµ·Ï ÇÕ´Ï´Ù.
+	// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ®ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Å«ï¿½ï¿½ C++ ï¿½ï¿½ï¿½Ó¸ï¿½å¿¡ï¿½ï¿½ ï¿½Ù½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Öµï¿½ï¿½ï¿½ ï¿½Õ´Ï´ï¿½.
 	UFUNCTION(BlueprintImplementableEvent, BlueprintCallable, Category = "Reconnection")
 	FString GetConnectionToken() const;
 };
 
 /**
- * InitNewPlayer¸¦ °¡·ÎÃ¤¼­ Á¢¼Ó°ú ÇÔ²² ¹ŞÀº TokenÀ» ÀúÀåÇÏ´Â GameMode
+ * InitNewPlayerï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½Ã¤ï¿½ï¿½ ï¿½ï¿½ï¿½Ó°ï¿½ ï¿½Ô²ï¿½ ï¿½ï¿½ï¿½ï¿½ Tokenï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ï´ï¿½ GameMode
  */
 UCLASS()
 class SHOOTINGARENA_API AMyReconnectionGameMode : public AGameModeBase
@@ -32,11 +32,17 @@ class SHOOTINGARENA_API AMyReconnectionGameMode : public AGameModeBase
 	
 protected:
 
-	// ·Î±×ÀÎ ½ÃÁ¡¿¡ ÅäÅ«À» ÆÄ½ÌÇØ¼­ ÄÁÆ®·Ñ·¯¿¡°Ô ÀÎÅÍÆäÀÌ½º·Î ´øÁö±â
+	// ï¿½Î±ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Å«ï¿½ï¿½ ï¿½Ä½ï¿½ï¿½Ø¼ï¿½ ï¿½ï¿½Æ®ï¿½Ñ·ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ì½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	virtual FString InitNewPlayer(APlayerController* NewPlayerController,
 		const FUniqueNetIdRepl& UniqueId,
 		const FString& Options,
 		const FString& Portal) override;
-	
-	
+
+public:
+	// ì´ ë ˆë²¨ì´ ì—´ë¦´ ë•Œ ë¶™ì€ URL ì˜µì…˜ ì „ì²´ë¥¼ ë°˜í™˜í•©ë‹ˆë‹¤ (ì˜ˆ: "?AIEasy=2?AINormal=1?AIHard=0").
+	// AGameModeBase::OptionsStringì€ protectedë¼ì„œ ë¸”ë£¨í”„ë¦°íŠ¸ì—ì„œ ëª» ì½ëŠ”ë°,
+	// ë§¤ì¹˜ ì„œë²„(BP_MultiplayerAIGameMode)ê°€ ìŠ¤í°ë  ë•Œ ë§µ ì´ë¦„ ë’¤ì— ë¶™ì—¬ ë„˜ê¸´
+	// ?AIEasy=/?AINormal=/?AIHard= ê°’ì„ ë¸”ë£¨í”„ë¦°íŠ¸ì—ì„œ Parse Optionìœ¼ë¡œ ì½ìœ¼ë ¤ë©´ í•„ìš”í•©ë‹ˆë‹¤.
+	UFUNCTION(BlueprintPure, Category = "Server")
+	FString GetLevelOptionsString() const { return OptionsString; }
 };

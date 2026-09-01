@@ -64,4 +64,44 @@ public:
 			Keywords = "Campaign Server Ready Mark Dedicated Process"
 			))
 	static bool MarkLocalDedicatedServerReady(UObject* WorldContextObject);
+
+	// --------------------------------------------------------------------
+	// 매치 서버(로비 서버가 "게임 시작" 시 별도 프로세스로 띄우는 서버)용 함수들입니다.
+	// 위 캠페인용 StartLocalDedicatedServer와 로직은 거의 같지만,
+	// - "Dedicated Server 프로세스 안에서는 호출 금지" 가드가 없습니다 (로비 서버 자체가
+	//   Dedicated Server이고, 그 안에서 이 함수를 호출하는 게 정상적인 사용 시나리오이기 때문).
+	// - 위 캠페인용 핸들과는 별도의 핸들로 추적합니다 (서로 독립적인 프로세스).
+	// Ready 확인은 캠페인용과 동일하게 MarkLocalDedicatedServerReady를 그대로 재사용합니다
+	// (매치 서버 쪽 GameMode BeginPlay에서 그 함수를 그대로 호출하면 됩니다).
+	// --------------------------------------------------------------------
+
+	/**
+	* 매치 서버 프로세스를 백그라운드로 실행합니다. 이미 실행 중인 매치 서버가 있다면
+	* 아무 것도 하지 않고 false를 반환합니다.
+	*
+	* @param MapName 서버가 시작 시 로드할 맵 이름입니다. "?Game=..."이나 "?AIEasy=1" 같은
+	*                URL 옵션을 그대로 이어붙여서 넘겨도 됩니다 (예: "Map_01?Game=BP_MultiplayerAIGameMode_C?AIEasy=1").
+	* @param Port 매치 서버가 사용할 포트 번호
+	*/
+	UFUNCTION(BlueprintCallable, Category = "Server|MatchServer", meta = (Keywords = "Match Server Start Dedicated Process"))
+	static bool StartMatchServer(const FString& MapName, int32 Port = 7778);
+
+	/**
+	* StartMatchServer로 띄운 매치 서버 프로세스를 종료합니다.
+	* 실행 중인 프로세스가 없다면 아무 일도 일어나지 않습니다.
+	*/
+	UFUNCTION(BlueprintCallable, Category = "Server|MatchServer", meta = (Keywords = "Match Server Stop Dedicated Process"))
+	static void StopMatchServer();
+
+	/**
+	* StartMatchServer로 띄운 매치 서버 프로세스가 현재 실행 중인지 확인합니다.
+	*/
+	UFUNCTION(BlueprintPure, Category = "Server|MatchServer", meta = (Keywords = "Match Server Running Dedicated Process"))
+	static bool IsMatchServerRunning();
+
+	/**
+	* 매치 서버가 클라이언트 접속을 받을 준비가 되었는지 확인합니다.
+	*/
+	UFUNCTION(BlueprintPure, Category = "Server|MatchServer", meta = (Keywords = "Match Server Ready Dedicated Process"))
+	static bool IsMatchServerReady();
 };

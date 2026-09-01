@@ -27,6 +27,15 @@ public:
 	UPROPERTY(ReplicatedUsing = OnRep_HostPlayerState, BlueprintReadOnly, Category = "Lobby")
 	TObjectPtr<APlayerState> HostPlayerState = nullptr;
 
+	// 매치 서버(로비 서버가 게임 시작 시 별도 프로세스로 띄우는 서버)의 접속 주소입니다.
+	// 비어있으면 "지금 도는 매치 없음"을 뜻합니다. 값이 채워지면 각 클라이언트는
+	// (서버가 강제로 이동시키는 게 아니라) 각자 원할 때 이 주소로 직접 접속(open)합니다 —
+	// 이렇게 해야 "결과창에서 로비로 돌아가기"를 각자 따로 누를 수 있습니다.
+	// BlueprintReadWrite인 이유: Slots/HostPlayerState와 달리 이 값은 전용 C++ 함수 없이
+	// BP_LobbyGameMode::OnLobbyStartGameApproved에서 블루프린트가 직접 채워넣습니다.
+	UPROPERTY(ReplicatedUsing = OnRep_MatchServerAddress, BlueprintReadWrite, Category = "Lobby")
+	FString MatchServerAddress;
+
 	// 맵이 정해졌을 때(최초 진입 또는 방장이 맵 변경) 슬롯 배열을 새로 구성합니다. 서버 전용입니다.
 	// 기존에 채워져 있던 Player/AI 슬롯은 앞쪽 인덱스부터 최대한 유지합니다.
 	void RebuildSlots(const FString& NewMapID, int32 NewMaxPlayerCount);
@@ -66,4 +75,7 @@ protected:
 
 	UFUNCTION()
 	void OnRep_HostPlayerState();
+
+	UFUNCTION()
+	void OnRep_MatchServerAddress();
 };

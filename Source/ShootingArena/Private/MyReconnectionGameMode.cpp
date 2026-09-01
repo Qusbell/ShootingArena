@@ -22,10 +22,23 @@ FString AMyReconnectionGameMode::InitNewPlayer(APlayerController* NewPlayerContr
 			IReconnectionInterface::Execute_SetConnectionToken(NewPlayerController, ExtractedToken);
 		}
 
-		// 이전 레벨(로비 등)에서 저장해둔 닉네임이 있으면 새 PlayerState에도 그대로 적용합니다.
+		// 닉네임 적용. 우선순위:
+		// 1. 접속 URL에 직접 실려온 "?Nickname=" 옵션 (로비 서버와 별도 프로세스인 매치 서버로
+		//    접속할 때 이 방법을 씁니다 — 매치 서버는 로비와 GameInstance를 공유하지 않아서
+		//    아래 2번 방법으로는 닉네임을 알 수 없기 때문입니다.)
+		// 2. 이전 레벨(같은 프로세스 안에서의 로비 등)에서 저장해둔 닉네임 (GameInstance 조회)
 		if (APlayerState* NewPlayerState = NewPlayerController->PlayerState)
 		{
-			if (UShootingArenaGameInstance* SAGameInstance = Cast<UShootingArenaGameInstance>(GetWorld() ? GetWorld()->GetGameInstance() : nullptr))
+			const FString NicknameOption = UGameplayStatics::ParseOption(Options, TEXT("Nickname"));
+
+			// [DEBUG] 임시 로그 - 문제 해결되면 제거 예정
+			UE_LOG(LogTemp, Warning, TEXT("[NicknameDebug] Options=\"%s\" ParsedNickname=\"%s\""), *Options, *NicknameOption);
+
+			if (!NicknameOption.IsEmpty())
+			{
+				NewPlayerState->SetPlayerName(NicknameOption);
+			}
+			else if (UShootingArenaGameInstance* SAGameInstance = Cast<UShootingArenaGameInstance>(GetWorld() ? GetWorld()->GetGameInstance() : nullptr))
 			{
 				const FString SavedNickname = SAGameInstance->GetSavedNickname(NewPlayerState->SavedNetworkAddress);
 				if (!SavedNickname.IsEmpty())
