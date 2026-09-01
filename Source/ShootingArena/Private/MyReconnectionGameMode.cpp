@@ -1,5 +1,7 @@
 #include "MyReconnectionGameMode.h"
 #include "Kismet/GameplayStatics.h"
+#include "ShootingArenaGameInstance.h"
+#include "GameFramework/PlayerState.h"
 
 FString AMyReconnectionGameMode::InitNewPlayer(APlayerController* NewPlayerController,
     const FUniqueNetIdRepl& UniqueId,
@@ -10,14 +12,27 @@ FString AMyReconnectionGameMode::InitNewPlayer(APlayerController* NewPlayerContr
 
 	if (ErrorMessage.IsEmpty() && NewPlayerController)
 	{
-		// 1. URL¿¡¼­ ÅäÅ« ÆÄ½Ì
+		// 1. URLï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Å« ï¿½Ä½ï¿½
 		FString ExtractedToken = UGameplayStatics::ParseOption(Options, TEXT("Token"));
 
-		// 2. [ÇÙ½É] ÇÃ·¹ÀÌ¾î ÄÁÆ®·Ñ·¯¿¡°Ô ÀÎÅÍÆäÀÌ½º ¸Þ½ÃÁö·Î ÅäÅ«À» Åö ´øÁý´Ï´Ù.
-		// ¸¸¾à ÄÁÆ®·Ñ·¯°¡ ÀÌ ÀÎÅÍÆäÀÌ½º¸¦ ±¸Çö ¾È Çß´Ù¸é, ±×³É ¾Æ¹« ÀÏµµ ÀÏ¾î³ªÁö ¾Ê°í ¾ÈÀüÇÏ°Ô ³Ñ¾î°©´Ï´Ù (´øÁö±â Àå¶¯).
+		// 2. [ï¿½Ù½ï¿½] ï¿½Ã·ï¿½ï¿½Ì¾ï¿½ ï¿½ï¿½Æ®ï¿½Ñ·ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ì½ï¿½ ï¿½Þ½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Å«ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ï´ï¿½.
+		// ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Æ®ï¿½Ñ·ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ì½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ß´Ù¸ï¿½, ï¿½×³ï¿½ ï¿½Æ¹ï¿½ ï¿½Ïµï¿½ ï¿½Ï¾î³ªï¿½ï¿½ ï¿½Ê°ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ï°ï¿½ ï¿½Ñ¾î°©ï¿½Ï´ï¿½ (ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½å¶¯).
 		if (NewPlayerController->GetClass()->ImplementsInterface(UReconnectionInterface::StaticClass()))
 		{
 			IReconnectionInterface::Execute_SetConnectionToken(NewPlayerController, ExtractedToken);
+		}
+
+		// ì´ì „ ë ˆë²¨(ë¡œë¹„ ë“±)ì—ì„œ ì €ìž¥í•´ë‘” ë‹‰ë„¤ìž„ì´ ìžˆìœ¼ë©´ ìƒˆ PlayerStateì—ë„ ê·¸ëŒ€ë¡œ ì ìš©í•©ë‹ˆë‹¤.
+		if (APlayerState* NewPlayerState = NewPlayerController->PlayerState)
+		{
+			if (UShootingArenaGameInstance* SAGameInstance = Cast<UShootingArenaGameInstance>(GetWorld() ? GetWorld()->GetGameInstance() : nullptr))
+			{
+				const FString SavedNickname = SAGameInstance->GetSavedNickname(NewPlayerState->SavedNetworkAddress);
+				if (!SavedNickname.IsEmpty())
+				{
+					NewPlayerState->SetPlayerName(SavedNickname);
+				}
+			}
 		}
 	}
 
