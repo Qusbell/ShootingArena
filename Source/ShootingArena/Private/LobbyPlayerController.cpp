@@ -1,6 +1,7 @@
 #include "LobbyPlayerController.h"
 #include "LobbyGameState.h"
 #include "LobbyGameMode.h"
+#include "ShootingArenaGameInstance.h"
 #include "GameFramework/PlayerState.h"
 
 ALobbyGameState* ALobbyPlayerController::GetLobbyGameState() const
@@ -93,6 +94,43 @@ void ALobbyPlayerController::Server_SetReady_Implementation(bool bReady)
 
 	LobbyGameState->Slots[SlotIndex].bReady = bReady;
 	LobbyGameState->OnLobbyStateChanged();
+}
+
+void ALobbyPlayerController::Server_SetPlayerName_Implementation(const FString& NewName)
+{
+	if (!PlayerState)
+	{
+		return;
+	}
+
+	// 앞뒤 공백 제거 + 너무 긴 이름 방지.
+	const FString TrimmedName = NewName.TrimStartAndEnd().Left(20);
+	if (TrimmedName.IsEmpty())
+	{
+		return;
+	}
+
+	PlayerState->SetPlayerName(TrimmedName);
+
+	// 다음 레벨(실제 게임)로 넘어간 뒤에도 이 이름을 계속 쓸 수 있도록, 접속 주소를 키로 GameInstance에 저장해둡니다.
+	// (AMyReconnectionGameMode::InitNewPlayer가 새 레벨에서 이 값을 다시 읽어 PlayerState에 적용합니다.)
+	if (UShootingArenaGameInstance* SAGameInstance = Cast<UShootingArenaGameInstance>(GetWorld() ? GetWorld()->GetGameInstance() : nullptr))
+	{
+		SAGameInstance->SetSavedNickname(PlayerState->SavedNetworkAddress, TrimmedName);
+	}
+
+	ALobbyGameState* LobbyGameState = GetLobbyGameState();
+	if (!LobbyGameState)
+	{
+		return;
+	}
+
+	const int32 SlotIndex = LobbyGameState->FindSlotIndexForPlayer(PlayerState);
+	if (LobbyGameState->Slots.IsValidIndex(SlotIndex))
+	{
+		LobbyGameState->Slots[SlotIndex].DisplayName = TrimmedName;
+		LobbyGameState->OnLobbyStateChanged();
+	}
 }
 
 void ALobbyPlayerController::Server_ChangeMap_Implementation(const FString& NewMapID, int32 NewMaxPlayerCount)

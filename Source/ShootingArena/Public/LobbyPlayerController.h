@@ -30,6 +30,10 @@ public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Lobby")
 	void Server_SetReady(bool bReady);
 
+	// 본인의 표시 이름(닉네임)을 설정합니다. PlayerState와, 본인이 차지한 슬롯의 DisplayName을 함께 갱신합니다.
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Lobby")
+	void Server_SetPlayerName(const FString& NewName);
+
 	// 방장 전용: 선택된 맵을 바꿉니다. NewMaxPlayerCount는 호출하는 쪽(BP)이 DataTable에서 조회해서 넘겨줍니다.
 	// 현재 채워진 슬롯 수가 NewMaxPlayerCount보다 많으면 무시됩니다.
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Lobby")
