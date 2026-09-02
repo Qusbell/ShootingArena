@@ -23,19 +23,6 @@ enum class ENavPathTestResult : uint8
 
 
 
-/** 점프패드 궤적을 무엇으로 결정할지 선택 */
-UENUM(BlueprintType)
-enum class EJumpPadArcMode : uint8
-{
-	/** 최고점 여유 높이(ApexHeight)로 궤적을 결정. 발사각은 결과로 따라옴 (기존 방식) */
-	ApexHeight   UMETA(DisplayName = "Apex Height"),
-	/** 발사각(LaunchAngle, 수평 기준)을 고정하고 도달에 필요한 속도를 역산 */
-	LaunchAngle  UMETA(DisplayName = "Launch Angle")
-};
-
-
-
-
 /**
  * cpp에만 존재하는 기능들을 BP에서도 사용할 수 있도록 래핑하는 라이브러리
  */
@@ -108,13 +95,14 @@ public:
 
 
 	/**
-	 * 점프패드용: StartPos -> EndPos 에 정확히 도달하는 발사 속도를 계산합니다.
+	 * 점프패드 [Launch Angle 방식]: StartPos 에서 수평 기준 발사각을 고정한 채
+	 * EndPos 에 정확히 도달하는 발사 속도를 계산합니다.
 	 * 상승 구간(Vz>0)과 하강 구간(Vz<=0)의 GravityScale 을 다르게 줄 수 있어
 	 * "빠르게 솟구쳐서 느긋하게 낙하" 같은 비대칭 포물선을 목표 착지 정확도를 유지한 채 만듭니다.
 	 * 실제로 이 궤적을 타려면 런타임에서 캐릭터가 Vz 부호에 따라 GravityScale 을
-	 * Rise/Fall 로 전환해야 합니다 (UJumpPadFlightComponent).
+	 * Rise/Fall 로 전환해야 합니다 (UJumpPadFlightComponent::BeginFlight).
 	 *
-	 * StartPos == EndPos 수평거리가 0이면 수직으로만 발사됩니다.
+	 * 시간 기반(공식) 궤적이 필요하면 SuggestJumpPadVelocityByApexTime 을 쓰세요.
 	 *
 	 * @param WorldContextObject   월드 컨텍스트 (BP 에서 Self)
 	 * @param StartPos             발사 시작 위치 (보통 캐릭터 위치)
@@ -122,11 +110,8 @@ public:
 	 * @param OutLaunchVelocity    LaunchCharacter 에 넣을 발사 속도 (bXYOverride / bZOverride = true)
 	 * @param RiseGravityScale     상승 중 적용할 GravityScale. 클수록 빠르게 솟고 수평속도도 빨라짐
 	 * @param FallGravityScale     하강 중 적용할 GravityScale. 작을수록 느긋하게 낙하
-	 * @param ApexHeight           [ApexHeight 모드] 더 높은 끝점 기준 최고점 여유 높이(cm). 클수록 붕 뜨는 궤적
-	 * @param ArcMode              궤적 결정 방식. ApexHeight(기존) 또는 LaunchAngle
-	 * @param LaunchAngleDeg       [LaunchAngle 모드] 수평 기준 발사각(도, 1~89). 클수록 가파르게 솟는 궤적.
-	 *                             그 각도로 목표에 도달할 수 없으면 false 를 반환한다.
-	 *                             수평거리가 거의 0이면 이 모드는 무시되고 ApexHeight 로 폴백한다.
+	 * @param LaunchAngleDeg       수평 기준 발사각(도, 1~89). 클수록 가파르게 솟는 궤적.
+	 *                             그 각도로 목표에 도달할 수 없거나 수평거리가 거의 0이면 false 를 반환한다.
 	 * @return 유효한 궤적이 나오면 true
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Gameplay|JumpPad",
@@ -139,8 +124,6 @@ public:
 		FVector& OutLaunchVelocity,
 		float RiseGravityScale = 3.0f,
 		float FallGravityScale = 0.8f,
-		float ApexHeight = 250.0f,
-		EJumpPadArcMode ArcMode = EJumpPadArcMode::ApexHeight,
 		float LaunchAngleDeg = 60.0f
 	);
 
@@ -150,16 +133,16 @@ public:
 	 * 도달하는 발사 속도를 계산합니다. 상승/하강 모두 같은 중력 G 를 쓰는 단순 포물선 모델입니다.
 	 * (상승/하강 비대칭 궤적이 필요하면 SuggestJumpPadVelocity 의 LaunchAngle 모드를 쓰세요.)
 	 *
-	 *   V_xy = (TargetPoint.XY - StartPoint.XY) / ApexTime
-	 *   V_z  = ((TargetPoint.Z - StartPoint.Z) + G * ApexTime^2 / 2) / ApexTime
+	 *   V_xy = (LaunchPosition.XY - StartPoint.XY) / ApexTime
+	 *   V_z  = ((LaunchPosition.Z - StartPoint.Z) + G * ApexTime^2 / 2) / ApexTime
 	 *
-	 * 주의: ApexTime 은 '정점까지의 시간'이 아니라 'TargetPoint 도달까지의 총 비행시간'입니다.
+	 * 주의: ApexTime 은 '정점까지의 시간'이 아니라 'LaunchPosition 도달까지의 총 비행시간'입니다.
 	 *       (수평 이동이 없는 평지 점프에서는 정점이 ApexTime/2 지점에 옵니다.)
 	 *
 	 * @param WorldContextObject  월드 컨텍스트 (BP 에서 Self). GravityZOverride 가 0 일 때 월드 중력을 읽는 데 사용
 	 * @param StartPoint          발사 시작 위치 (플레이어가 발사되는 순간 위치)
-	 * @param TargetPoint         목표 도달 위치 (Target Point)
-	 * @param ApexTime            StartPoint -> TargetPoint 도달에 쓸 시간(초, > 0). 클수록 높고 느긋한 궤적
+	 * @param LaunchPosition      도달 목표 위치(월드). 상승 방향과 최고 높이를 겸함
+	 * @param ApexTime            StartPoint -> LaunchPosition 도달에 쓸 시간(초, > 0). 클수록 높고 느긋한 궤적
 	 * @param OutLaunchVelocity   LaunchCharacter 에 넣을 발사 속도 (bXYOverride / bZOverride = true)
 	 * @param GravityZOverride    비행 중 적용될 중력 가속도 크기(cm/s^2). 0 이면 월드 중력(|GetGravityZ|) 사용.
 	 *                            비행 중 캐릭터 GravityScale 이 1 이 아니면 그 값을 곱해서 넘길 것.
@@ -171,7 +154,7 @@ public:
 	static bool SuggestJumpPadVelocityByApexTime(
 		UObject* WorldContextObject,
 		FVector StartPoint,
-		FVector TargetPoint,
+		FVector LaunchPosition,
 		float ApexTime,
 		FVector& OutLaunchVelocity,
 		float GravityZOverride = 0.0f
