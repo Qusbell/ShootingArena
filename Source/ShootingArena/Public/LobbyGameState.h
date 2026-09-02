@@ -64,6 +64,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Lobby")
 	int32 GetFilledSlotCount() const;
 
+	// 현재 Slots 배열에서 난이도별 AI 슬롯 수를 "매번 새로" 세어 돌려줍니다.
+	// BP_LobbyGameMode 가 자체 멤버 변수(MatchCountEasy 등)에 ForEachLoop 로 누적하던 것을
+	// 이 함수 호출로 대체하세요. 멤버 변수는 GameMode 인스턴스에 남아서 매 매치마다 값이
+	// 더해지는 버그(1 -> 2 -> 3 ...)의 원인이었습니다.
+	UFUNCTION(BlueprintPure, Category = "Lobby")
+	void CountAISlotsByDifficulty(int32& OutEasy, int32& OutNormal, int32& OutHard) const;
+
 	// Slots / SelectedMapID / HostPlayerState 중 하나라도 갱신되면 (서버, 클라 모두) 호출됩니다.
 	// GameMode/PlayerController가 슬롯을 직접 수정한 뒤 호출하며, UI 위젯은 여기에 바인딩해서 새로고침하면 됩니다.
 	UFUNCTION(BlueprintImplementableEvent, Category = "Lobby")

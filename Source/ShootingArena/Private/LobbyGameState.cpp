@@ -233,6 +233,32 @@ int32 ALobbyGameState::GetFilledSlotCount() const
 	return Count;
 }
 
+void ALobbyGameState::CountAISlotsByDifficulty(int32& OutEasy, int32& OutNormal, int32& OutHard) const
+{
+	OutEasy = 0;
+	OutNormal = 0;
+	OutHard = 0;
+
+	for (const FLobbySlot& Slot : Slots)
+	{
+		if (Slot.SlotType != ELobbySlotType::AI)
+		{
+			continue;
+		}
+
+		switch (Slot.Difficulty)
+		{
+		case ELobbyDifficulty::Easy:   ++OutEasy;   break;
+		case ELobbyDifficulty::Normal: ++OutNormal; break;
+		case ELobbyDifficulty::Hard:   ++OutHard;   break;
+		default: break;
+		}
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("[LobbyDebug] CountAISlotsByDifficulty: Easy=%d Normal=%d Hard=%d (Slots.Num=%d)"),
+		OutEasy, OutNormal, OutHard, Slots.Num());
+}
+
 void ALobbyGameState::OnRep_Slots()
 {
 	OnLobbyStateChanged();
