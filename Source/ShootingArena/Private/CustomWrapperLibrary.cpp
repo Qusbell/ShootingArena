@@ -388,8 +388,6 @@ bool UCustomWrapperLibrary::SuggestJumpPadVelocity(
 	FVector& OutLaunchVelocity,
 	float RiseGravityScale,
 	float FallGravityScale,
-	float ApexHeight,
-	EJumpPadArcMode ArcMode,
 	float LaunchAngleDeg)
 {
 	OutLaunchVelocity = FVector::ZeroVector;
@@ -416,48 +414,23 @@ bool UCustomWrapperLibrary::SuggestJumpPadVelocity(
 	const FVector DeltaXY(Delta.X, Delta.Y, 0.0f);
 	const float Dxy = DeltaXY.Size();
 	const float H = Delta.Z; // 시작점 대비 목표점의 높이차 (부호 있음)
-	const FVector DirXY = (Dxy > KINDA_SMALL_NUMBER) ? (DeltaXY / Dxy) : FVector::ZeroVector;
 
-	float VzUp = 0.0f; // 초기 수직속도
-	float Vxy = 0.0f;  // 수평속도 크기 (비행 내내 일정)
-
-	// 수평거리가 사실상 0이면 발사각 개념이 무의미하므로 ApexHeight 로 폴백
-	if (ArcMode == EJumpPadArcMode::LaunchAngle && Dxy > 1.0f)
+	// 발사각 방식은 수평거리가 있어야 의미가 있다. (수직 발사가 필요하면 ApexTime 점프패드를 쓸 것)
+	if (Dxy <= 1.0f)
 	{
-		const float AngleRad = FMath::DegreesToRadians(FMath::Clamp(LaunchAngleDeg, 1.0f, 89.0f));
-		if (!SolveVzForLaunchAngle(Dxy, H, GUp, GDown, AngleRad, VzUp))
-		{
-			return false; // 그 각도로는 목표 지점에 도달할 수 없음
-		}
-		Vxy = VzUp / FMath::Tan(AngleRad);
+		return false;
 	}
-	else
+
+	const float AngleRad = FMath::DegreesToRadians(FMath::Clamp(LaunchAngleDeg, 1.0f, 89.0f));
+
+	float VzUp = 0.0f;
+	if (!SolveVzForLaunchAngle(Dxy, H, GUp, GDown, AngleRad, VzUp))
 	{
-		// 기존 방식: 최고점 높이(ApexHeight)로 궤적을 결정하고 발사각은 결과로 둔다.
-		if (ApexHeight <= 0.0f)
-		{
-			return false;
-		}
-
-		// 시작점 기준 최고점 높이: 더 높은 끝점 위로 ApexHeight 만큼
-		const float h = FMath::Max(0.0f, H) + ApexHeight; // (h - H) 는 항상 양수
-
-		// 상승 구간: 최고점까지 올라가는 데 필요한 초기 수직속도와 시간
-		VzUp = FMath::Sqrt(2.0f * GUp * h);
-		const float tUp = VzUp / GUp;
-
-		// 하강 구간: 최고점에서 목표 높이까지 떨어지는 시간 (중력 GDown)
-		const float tDown = FMath::Sqrt(2.0f * (h - H) / GDown);
-
-		const float T = tUp + tDown;
-		if (T <= KINDA_SMALL_NUMBER)
-		{
-			return false;
-		}
-
-		// 수평속도는 전체 비행시간 동안 일정 (공기저항 없음)
-		Vxy = Dxy / T;
+		return false; // 그 각도로는 목표 지점에 도달할 수 없음
 	}
+
+	const FVector DirXY = DeltaXY / Dxy;
+	const float Vxy = VzUp / FMath::Tan(AngleRad);
 
 	OutLaunchVelocity = DirXY * Vxy + FVector(0.0f, 0.0f, VzUp);
 	return true;
@@ -467,7 +440,7 @@ bool UCustomWrapperLibrary::SuggestJumpPadVelocity(
 bool UCustomWrapperLibrary::SuggestJumpPadVelocityByApexTime(
 	UObject* WorldContextObject,
 	FVector StartPoint,
-	FVector TargetPoint,
+	FVector LaunchPosition,
 	float ApexTime,
 	FVector& OutLaunchVelocity,
 	float GravityZOverride)
@@ -498,7 +471,7 @@ bool UCustomWrapperLibrary::SuggestJumpPadVelocityByApexTime(
 		return false;
 	}
 
-	const FVector Delta = TargetPoint - StartPoint;
+	const FVector Delta = LaunchPosition - StartPoint;
 
 	// 수평속도: ApexTime 동안 수평 변위를 모두 커버 (비행 내내 일정, 공기저항 없음)
 	const float Vx = Delta.X / ApexTime;
