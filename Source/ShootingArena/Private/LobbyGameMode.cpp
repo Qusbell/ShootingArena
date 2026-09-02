@@ -33,9 +33,14 @@ void ALobbyGameMode::PostLogin(APlayerController* NewPlayer)
 	// MatchServerAddress 값이 이전 매치 그대로 "7778" 등으로 남아있으면 그 초기 리플리케이션만으로도
 	// OnRep_MatchServerAddress가 발동해서 방금 나온 매치 서버로 다시 끌려가버리는 버그가 있었습니다.
 	// 누군가 로비에 (재)접속하는 시점엔 이미 이전 매치는 완전히 끝난 뒤이므로 안전하게 비워줍니다.
+	//
+	// MatchServerAddress가 아직 차 있다 = "직전 매치에서 돌아온 첫 플레이어"라는 신호이므로,
+	// 이 시점에 지난 세션의 AI 슬롯도 함께 비웁니다. 안 그러면 로비 서버는 계속 살아있어서
+	// Slots 배열에 이전 매치의 AI 슬롯이 그대로 남고, 다음 매치를 시작하면 그 수가 누적됩니다.
 	if (!LobbyGameState->MatchServerAddress.IsEmpty())
 	{
 		LobbyGameState->MatchServerAddress.Empty();
+		LobbyGameState->ResetNonPlayerSlots();
 	}
 
 	// 아직 방장이 없다면 (=서버에 처음 들어온 플레이어라면) 방장으로 지정합니다.

@@ -47,6 +47,11 @@ public:
 	// 플레이어가 차지하고 있던 슬롯을 다시 Open으로 되돌립니다. 서버 전용입니다.
 	void ReleasePlayerSlot(APlayerState* PlayerState);
 
+	// Player가 아닌 슬롯(AI/Locked)을 전부 Open으로 되돌립니다. 서버 전용입니다.
+	// 이전 매치가 끝나고 로비로 돌아왔을 때, 지난 세션에 방장이 세팅해둔 AI 슬롯이
+	// 그대로 남아 다음 매치의 AI 수에 누적되는 것을 막기 위해 호출합니다.
+	void ResetNonPlayerSlots();
+
 	// PlayerState가 차지한 슬롯의 인덱스를 찾습니다. 없으면 INDEX_NONE.
 	UFUNCTION(BlueprintPure, Category = "Lobby")
 	int32 FindSlotIndexForPlayer(APlayerState* PlayerState) const;

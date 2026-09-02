@@ -537,24 +537,21 @@ bool ULocalDedicatedServerLibrary::MarkLocalDedicatedServerReady(
 
 bool ULocalDedicatedServerLibrary::StartMatchServer(const FString& MapName, int32 Port)
 {
-    // 주의: 로비 서버(그 자체가 StartMatchServer 로 스폰됨) -> 매치 서버 스폰이 정상 흐름이므로
-    // "스폰된 서버 안에서는 호출 금지" 같은 가드를 두지 않습니다. 중복 스폰은 아래
-    // IsMatchServerRunning() 체크로 막습니다.
-    if (IsMatchServerRunning())
+    // 주의: 로비 서버(그 자체가 StartMatchServer 로 스폰됨) -> 매치 서버 스폰이 정상 흐름입니다.
+    //
+    // "start match" 는 언제나 "새 매치 서버를 원한다" 는 뜻이므로, 이전 매치 서버가 아직
+    // 살아 있으면(이전 매치 종료 후 로비 복귀 시 정리 RPC가 누락됐거나 타이밍이 어긋난 경우 등)
+    // 재사용하지 않고 확실히 종료한 뒤 새로 띄웁니다. 이렇게 하지 않으면 클라이언트가
+    // 이전 매치 상태(누적된 AI 등)가 그대로 남은 낡은 서버로 다시 접속하는 버그가 있었습니다.
+    if (IsMatchServerRunning() || GMatchServerHandle.IsValid())
     {
         UE_LOG(
             LogTemp,
             Warning,
-            TEXT("[MatchServer] 이미 실행 중인 매치 서버가 있어 새로 시작하지 않습니다.")
+            TEXT("[MatchServer] 이전 매치 서버가 남아 있어 종료 후 새로 시작합니다.")
         );
 
-        return false;
-    }
-
-    if (GMatchServerHandle.IsValid())
-    {
-        FPlatformProcess::CloseProc(GMatchServerHandle);
-        GMatchServerHandle.Reset();
+        StopMatchServer();
     }
 
     const FString ReadyDirectory = FPaths::ConvertRelativePathToFull(
