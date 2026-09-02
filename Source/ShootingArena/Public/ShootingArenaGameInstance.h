@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/GameInstance.h"
+#include "LobbyTypes.h"
 #include "ShootingArenaGameInstance.generated.h"
 
 /**
@@ -22,6 +23,13 @@ public:
 	// 저장된 닉네임을 찾습니다. 없으면 빈 문자열을 반환합니다. 서버 전용입니다.
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Player")
 	FString GetSavedNickname(const FString& NetworkAddress) const;
+
+	// 로비에서 설정한 AI 슬롯들의 난이도 목록입니다. 방장이 게임 시작을 누르면
+	// BP_LobbyGameMode가 LobbyGameState->Slots(AI 타입)에서 이 배열을 채우고,
+	// 매치 레벨의 GameMode(예: BP_MultiplayerAIGameMode)가 레벨 이동 후 이 값을 읽어
+	// 그 개수/난이도만큼 AI를 스폰합니다. 서버 전용입니다.
+	UPROPERTY(BlueprintReadWrite, Category = "Lobby")
+	TArray<ELobbyDifficulty> PendingAIDifficulties;
 
 private:
 	UPROPERTY()

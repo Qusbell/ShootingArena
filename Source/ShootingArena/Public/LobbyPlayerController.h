@@ -43,6 +43,14 @@ public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Lobby")
 	void Server_StartGame();
 
+	// 방장 전용: 로비 서버가 내부적으로 띄워둔 매치 서버(있다면)를 정리합니다.
+	// 방장이 "메인메뉴로" 나가면서 자기 클라이언트에서 로비 서버 프로세스 자체를 강제 종료(TerminateProc)하는데,
+	// 그 안에서 띄운 매치 서버 자식 프로세스는 부모가 죽어도 자동으로 안 죽고 고아 프로세스로 남습니다.
+	// 그래서 로비 프로세스를 끄기 "직전에" 서버(=로비 프로세스) 스스로에게 먼저 자기 매치 서버를 정리하라고
+	// 시켜야 합니다. 방장이 아니면 애초에 로비 프로세스를 자기가 띄운 게 아니라서 아무 효과가 없습니다.
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Lobby")
+	void Server_CleanupMatchServer();
+
 private:
 	ALobbyGameState* GetLobbyGameState() const;
 	bool IsHost() const;
