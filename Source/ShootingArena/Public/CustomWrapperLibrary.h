@@ -144,4 +144,37 @@ public:
 		float LaunchAngleDeg = 60.0f
 	);
 
+
+	/**
+	 * 점프패드 [Apex Time 방식]: StartPoint 에서 발사해 ApexTime 초 뒤 TargetPoint 에
+	 * 도달하는 발사 속도를 계산합니다. 상승/하강 모두 같은 중력 G 를 쓰는 단순 포물선 모델입니다.
+	 * (상승/하강 비대칭 궤적이 필요하면 SuggestJumpPadVelocity 의 LaunchAngle 모드를 쓰세요.)
+	 *
+	 *   V_xy = (TargetPoint.XY - StartPoint.XY) / ApexTime
+	 *   V_z  = ((TargetPoint.Z - StartPoint.Z) + G * ApexTime^2 / 2) / ApexTime
+	 *
+	 * 주의: ApexTime 은 '정점까지의 시간'이 아니라 'TargetPoint 도달까지의 총 비행시간'입니다.
+	 *       (수평 이동이 없는 평지 점프에서는 정점이 ApexTime/2 지점에 옵니다.)
+	 *
+	 * @param WorldContextObject  월드 컨텍스트 (BP 에서 Self). GravityZOverride 가 0 일 때 월드 중력을 읽는 데 사용
+	 * @param StartPoint          발사 시작 위치 (플레이어가 발사되는 순간 위치)
+	 * @param TargetPoint         목표 도달 위치 (Target Point)
+	 * @param ApexTime            StartPoint -> TargetPoint 도달에 쓸 시간(초, > 0). 클수록 높고 느긋한 궤적
+	 * @param OutLaunchVelocity   LaunchCharacter 에 넣을 발사 속도 (bXYOverride / bZOverride = true)
+	 * @param GravityZOverride    비행 중 적용될 중력 가속도 크기(cm/s^2). 0 이면 월드 중력(|GetGravityZ|) 사용.
+	 *                            비행 중 캐릭터 GravityScale 이 1 이 아니면 그 값을 곱해서 넘길 것.
+	 * @return ApexTime 과 G 가 유효하면 true
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Gameplay|JumpPad",
+		meta = (WorldContext = "WorldContextObject",
+			Keywords = "jumppad launch ballistic arc apex time projectile velocity"))
+	static bool SuggestJumpPadVelocityByApexTime(
+		UObject* WorldContextObject,
+		FVector StartPoint,
+		FVector TargetPoint,
+		float ApexTime,
+		FVector& OutLaunchVelocity,
+		float GravityZOverride = 0.0f
+	);
+
 };
