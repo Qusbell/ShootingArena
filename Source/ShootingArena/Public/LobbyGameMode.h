@@ -33,6 +33,16 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Lobby")
 	void OnLobbyStartGameApproved(const FString& SelectedMapID);
 
+	// Server_StartGame이 OnLobbyStartGameApproved(=AI 수 URL 옵션 계산 + 매치 서버 스폰)를
+	// 마친 직후 호출합니다. "이번 로비 세션에서 매치가 한 번 나갔다"를 기록해두고, 다음에
+	// 플레이어가 매치에서 로비로 돌아오면(PostLogin) 지난 세션의 AI 슬롯을 비웁니다.
+	// 이렇게 안 하면 로비 서버는 계속 살아있어서 AI 슬롯이 그대로 남고, 다음 매치의 AI 수에
+	// 계속 누적됩니다(1 -> 2 -> 3 ...).
+	void MarkMatchLaunched();
+
 private:
 	ALobbyGameState* GetLobbyGameState() const;
+
+	// 위 MarkMatchLaunched 참고. 매치가 나간 뒤 첫 번째 (재)접속에서 소비되고 false로 돌아갑니다.
+	bool bMatchLaunchedSinceLobbyReset = false;
 };

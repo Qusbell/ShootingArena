@@ -16,6 +16,13 @@ void ALobbyGameMode::InitializeLobby(const FString& DefaultMapID, int32 MaxPlaye
 	}
 }
 
+void ALobbyGameMode::MarkMatchLaunched()
+{
+	bMatchLaunchedSinceLobbyReset = true;
+
+	UE_LOG(LogTemp, Warning, TEXT("[LobbyDebug] MarkMatchLaunched: 다음 로비 복귀 시 AI 슬롯을 초기화합니다."));
+}
+
 void ALobbyGameMode::PostLogin(APlayerController* NewPlayer)
 {
 	Super::PostLogin(NewPlayer);
@@ -26,6 +33,15 @@ void ALobbyGameMode::PostLogin(APlayerController* NewPlayer)
 		return;
 	}
 
+	// 매치가 한 번 나간 뒤 처음 (재)접속한 플레이어라면, 지난 세션에 방장이 세팅해둔
+	// AI 슬롯을 먼저 비웁니다. (로비 서버는 세션 내내 살아있어서 Slots 배열이 유지되므로,
+	// 여기서 안 비우면 다음 매치의 AI 수에 계속 누적됩니다.)
+	if (bMatchLaunchedSinceLobbyReset)
+	{
+		bMatchLaunchedSinceLobbyReset = false;
+		LobbyGameState->ResetNonPlayerSlots();
+	}
+
 	LobbyGameState->AssignPlayerToOpenSlot(NewPlayer->PlayerState);
 
 	// 매치 서버 주소를 초기화합니다. 이전 매치가 끝나고 돌아온 플레이어가 "새로" 로비에 접속하면
@@ -33,13 +49,10 @@ void ALobbyGameMode::PostLogin(APlayerController* NewPlayer)
 	// MatchServerAddress 값이 이전 매치 그대로 "7778" 등으로 남아있으면 그 초기 리플리케이션만으로도
 	// OnRep_MatchServerAddress가 발동해서 방금 나온 매치 서버로 다시 끌려가버리는 버그가 있었습니다.
 	// 누군가 로비에 (재)접속하는 시점엔 이미 이전 매치는 완전히 끝난 뒤이므로 안전하게 비워줍니다.
-	//
-	// MatchServerAddress가 아직 차 있다 = "직전 매치에서 돌아온 첫 플레이어"라는 신호이므로,
-	// 이 시점에 지난 세션의 AI 슬롯도 함께 비웁니다. 안 그러면 로비 서버는 계속 살아있어서
-	// Slots 배열에 이전 매치의 AI 슬롯이 그대로 남고, 다음 매치를 시작하면 그 수가 누적됩니다.
 	if (!LobbyGameState->MatchServerAddress.IsEmpty())
 	{
 		LobbyGameState->MatchServerAddress.Empty();
+		// AI 슬롯 초기화의 보조 경로. (주 경로는 위의 bMatchLaunchedSinceLobbyReset)
 		LobbyGameState->ResetNonPlayerSlots();
 	}
 
