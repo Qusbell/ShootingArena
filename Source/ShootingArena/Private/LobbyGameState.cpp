@@ -148,6 +148,45 @@ void ALobbyGameState::ReleasePlayerSlot(APlayerState* PlayerState)
 	UE_LOG(LogTemp, Warning, TEXT("[LobbyDebug]   -> NO MATCHING SLOT FOUND for %s"), *PlayerState->GetPlayerName());
 }
 
+void ALobbyGameState::ResetNonPlayerSlots()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	bool bChanged = false;
+
+	for (FLobbySlot& Slot : Slots)
+	{
+		if (Slot.SlotType == ELobbySlotType::Player)
+		{
+			continue;
+		}
+
+		// 이미 깨끗한 Open 슬롯이면 건너뜁니다.
+		if (Slot.SlotType == ELobbySlotType::Open
+			&& Slot.DisplayName.IsEmpty()
+			&& !Slot.bReady)
+		{
+			continue;
+		}
+
+		Slot.SlotType = ELobbySlotType::Open;
+		Slot.OwningPlayerState = nullptr;
+		Slot.DisplayName.Empty();
+		Slot.Difficulty = ELobbyDifficulty::Normal;
+		Slot.bReady = false;
+		bChanged = true;
+	}
+
+	if (bChanged)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[LobbyDebug] ResetNonPlayerSlots: AI/Locked 슬롯을 Open으로 초기화했습니다."));
+		OnLobbyStateChanged();
+	}
+}
+
 int32 ALobbyGameState::FindSlotIndexForPlayer(APlayerState* PlayerState) const
 {
 	if (!PlayerState)
@@ -192,6 +231,32 @@ int32 ALobbyGameState::GetFilledSlotCount() const
 		}
 	}
 	return Count;
+}
+
+void ALobbyGameState::CountAISlotsByDifficulty(int32& OutEasy, int32& OutNormal, int32& OutHard) const
+{
+	OutEasy = 0;
+	OutNormal = 0;
+	OutHard = 0;
+
+	for (const FLobbySlot& Slot : Slots)
+	{
+		if (Slot.SlotType != ELobbySlotType::AI)
+		{
+			continue;
+		}
+
+		switch (Slot.Difficulty)
+		{
+		case ELobbyDifficulty::Easy:   ++OutEasy;   break;
+		case ELobbyDifficulty::Normal: ++OutNormal; break;
+		case ELobbyDifficulty::Hard:   ++OutHard;   break;
+		default: break;
+		}
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("[LobbyDebug] CountAISlotsByDifficulty: Easy=%d Normal=%d Hard=%d (Slots.Num=%d)"),
+		OutEasy, OutNormal, OutHard, Slots.Num());
 }
 
 void ALobbyGameState::OnRep_Slots()

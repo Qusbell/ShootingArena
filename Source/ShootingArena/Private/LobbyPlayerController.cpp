@@ -171,7 +171,11 @@ void ALobbyPlayerController::Server_StartGame_Implementation()
 
 	if (ALobbyGameMode* LobbyGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ALobbyGameMode>() : nullptr)
 	{
+		// OnLobbyStartGameApproved(BP)가 현재 AI 슬롯을 세어 "?AIEasy=N" URL 옵션을 만들고
+		// 매치 서버를 스폰합니다. 그게 끝난 "직후" 매치 출발을 기록해서, 플레이어가 매치에서
+		// 로비로 돌아오면 지난 세션의 AI 슬롯이 비워지도록 합니다(누적 방지).
 		LobbyGameMode->OnLobbyStartGameApproved(LobbyGameState->SelectedMapID);
+		LobbyGameMode->MarkMatchLaunched();
 	}
 }
 

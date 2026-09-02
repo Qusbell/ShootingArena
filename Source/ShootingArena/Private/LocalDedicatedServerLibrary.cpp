@@ -4,6 +4,7 @@
 #include "Engine/World.h"
 #include "HAL/FileManager.h"
 #include "HAL/PlatformProcess.h"
+#include "Misc/App.h"
 #include "Misc/CommandLine.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Parse.h"
@@ -25,6 +26,121 @@ namespace
 	// 위 캠페인용 상태와는 완전히 독립적으로 추적합니다.
 	FProcHandle GMatchServerHandle;
 	FString GMatchServerReadyFilePath;
+
+	// 지금 이 프로세스가 StartLocalDedicatedServer / StartMatchServer 가 스폰한
+	// 서버 프로세스인지 여부.
+	// 스폰 시 항상 -LocalServerReadyFile= 인자를 붙이므로 그 존재 여부로 판별합니다.
+	bool IsRunningAsSpawnedLocalServer()
+	{
+		FString Unused;
+		return FParse::Value(
+			FCommandLine::Get(), LocalServerReadyArgument, Unused);
+	}
+
+	// 패키징된 빌드에서 로컬에 띄울 "진짜" Dedicated Server 실행 파일
+	// (<Project>Server.exe)의 절대경로를 해석합니다.
+	//
+	// 지금 이 프로세스(ShootingArena.exe)는 Game 타겟이라, -server 로 재실행해도
+	// FPlatformProperties::IsGameOnly()==true 때문에 IsRunningDedicatedServer()가
+	// 항상 false 가 되고 창 달린 클라이언트(리슨서버)로 떠 버립니다. 그래서 별도
+	// Server 타겟 산출물을 실행해야 합니다.
+	//
+	// 스테이징 레이아웃 예:
+	//   .../Windows/<Project>/Binaries/Win64/<Project>.exe             (클라이언트: 이 프로세스)
+	//   .../WindowsServer/<Project>/Binaries/Win64/<Project>Server.exe (서버: 찾는 대상)
+	//   .../Windows/<Project>.exe                                      (플랫 런처 레이아웃)
+	//   .../WindowsServer/<Project>Server.exe
+	//
+	// 찾지 못하면 빈 문자열을 반환합니다(호출부에서 에러 처리).
+	// 에디터 빌드에서는 사용되지 않으므로(에디터는 UnrealEditor.exe 재실행) 컴파일 대상에서 제외합니다.
+#if !WITH_EDITOR
+	FString ResolveLocalDedicatedServerExecutable()
+	{
+		// 커맨드라인으로 직접 지정할 수 있는 우회로(특수 배치/테스트용).
+		FString OverridePath;
+		if (FParse::Value(FCommandLine::Get(), TEXT("LocalServerExe="), OverridePath)
+			&& !OverridePath.IsEmpty())
+		{
+			OverridePath = FPaths::ConvertRelativePathToFull(OverridePath);
+			if (FPaths::FileExists(OverridePath))
+			{
+				return OverridePath;
+			}
+
+			UE_LOG(
+				LogTemp,
+				Warning,
+				TEXT("[LocalDedicatedServer] -LocalServerExe 로 지정된 경로가 존재하지 않습니다: %s"),
+				*OverridePath
+			);
+		}
+
+		const FString ClientExePath =
+			FPaths::ConvertRelativePathToFull(FPlatformProcess::ExecutablePath());
+
+		const FString ServerExeName =
+			FString(FApp::GetProjectName()) + TEXT("Server.exe");
+
+		TArray<FString> Candidates;
+
+		// 1) 전체 경로에서 마지막 "/Windows/" 스테이징 폴더를 "/WindowsServer/" 로 치환하고
+		//    실행 파일 이름을 <Project>Server.exe 로 교체.
+		//    (Deep 레이아웃과 Flat 런처 레이아웃 모두 커버)
+		{
+			const int32 WindowsFolderIdx = ClientExePath.Find(
+				TEXT("/Windows/"), ESearchCase::IgnoreCase, ESearchDir::FromEnd);
+
+			if (WindowsFolderIdx != INDEX_NONE)
+			{
+				const FString ServerRoot =
+					ClientExePath.Left(WindowsFolderIdx)
+					+ TEXT("/WindowsServer/")
+					+ ClientExePath.Mid(WindowsFolderIdx + 9 /* len("/Windows/") */);
+
+				Candidates.Add(FPaths::Combine(
+					FPaths::GetPath(ServerRoot), ServerExeName));
+			}
+		}
+
+		// 2) 클라이언트 exe 위치 기준 상대 경로 백업 후보들.
+		const FString ClientDir = FPaths::GetPath(ClientExePath);
+
+		//   Deep: <ROOT>/Windows/<Project>/Binaries/Win64 -> <ROOT> 로 4단계 상위
+		Candidates.Add(FPaths::Combine(
+			ClientDir, TEXT("../../../.."), TEXT("WindowsServer"),
+			FApp::GetProjectName(), TEXT("Binaries"), TEXT("Win64"), ServerExeName));
+
+		//   Flat: <ROOT>/Windows -> <ROOT> 로 1단계 상위
+		Candidates.Add(FPaths::Combine(
+			ClientDir, TEXT(".."), TEXT("WindowsServer"), ServerExeName));
+
+		//   Flat 클라이언트 + Deep 서버
+		Candidates.Add(FPaths::Combine(
+			ClientDir, TEXT(".."), TEXT("WindowsServer"),
+			FApp::GetProjectName(), TEXT("Binaries"), TEXT("Win64"), ServerExeName));
+
+		for (const FString& Candidate : Candidates)
+		{
+			const FString Full = FPaths::ConvertRelativePathToFull(Candidate);
+			if (FPaths::FileExists(Full))
+			{
+				return Full;
+			}
+		}
+
+		UE_LOG(
+			LogTemp,
+			Error,
+			TEXT("[LocalDedicatedServer] Server 타겟 실행 파일(%s)을 찾지 못했습니다. "
+				"클라이언트 exe=%s / 시도한 후보 %d개"),
+			*ServerExeName,
+			*ClientExePath,
+			Candidates.Num()
+		);
+
+		return FString();
+	}
+#endif // !WITH_EDITOR
 }
 
 
@@ -40,6 +156,21 @@ bool ULocalDedicatedServerLibrary::StartLocalDedicatedServer(
             Warning,
             TEXT("[LocalDedicatedServer] Dedicated Server 프로세스에서는 "
                 "다른 로컬 Dedicated Server를 시작하지 않습니다.")
+        );
+
+        return false;
+    }
+
+    // 패키징 빌드에서 IsRunningDedicatedServer()가 -server 를 무시하고 항상 false 인
+    // 케이스(Game 타겟이 잘못 재실행된 경우 등)를 대비한 이중 가드.
+    // 우리가 스폰한 서버 프로세스는 항상 -LocalServerReadyFile= 인자를 갖습니다.
+    if (IsRunningAsSpawnedLocalServer())
+    {
+        UE_LOG(
+            LogTemp,
+            Warning,
+            TEXT("[LocalDedicatedServer] 이 프로세스는 스폰된 서버 프로세스이므로 "
+                "또 다른 로컬 서버를 시작하지 않습니다.")
         );
 
         return false;
@@ -109,27 +240,30 @@ bool ULocalDedicatedServerLibrary::StartLocalDedicatedServer(
     );
 
     // --------------------------------------------------------------------
-    // 서버 실행 파일
+    // 서버 실행 파일 결정
     //
-    // 별도의 Server 타겟(ShootingArenaServer.exe)을 쓰지 않고, 지금 이 코드를
-    // 실행 중인 프로세스 자신의 실행 파일을 그대로 재사용합니다.
-    // - 에디터에서 테스트 중이면 UnrealEditor.exe가 그대로 재실행되고 (-game -server로
-    //   헤드리스 데디케이티드 서버가 됩니다).
-    // - 패키징된(혹은 스탠드얼론으로 빌드된) ShootingArena.exe로 실행 중이면 그 실행 파일이
-    //   그대로 재실행됩니다 (-server만으로 데디케이티드 서버가 됩니다).
-    // Epic이 배포하는 Installed Build 엔진은 별도의 Server 타겟 빌드를 지원하지 않기 때문에
-    // ("Server targets are not currently supported from this engine distribution."),
-    // 이 방식으로 에디터 설치 여부와 무관하게 로컬 서버를 띄울 수 있습니다.
+    // - 에디터: UnrealEditor.exe(지금 이 프로세스)를 그대로 재실행합니다. UnrealEditor 는
+    //   커맨드라인 -game -server 를 존중하므로 진짜 헤드리스 Dedicated Server 가 됩니다.
+    // - 패키징 빌드: 지금 이 프로세스(ShootingArena.exe, Game 타겟)를 -server 로 재실행하면
+    //   IsGameOnly()==true 라서 -server 가 무시되고 창 달린 클라이언트로 떠 버립니다.
+    //   그래서 같은 산출물에 함께 스테이징된 별도 Server 타겟 실행 파일
+    //   (<Project>Server.exe, WindowsServer 폴더)을 찾아 실행합니다.
     // --------------------------------------------------------------------
 
+#if WITH_EDITOR
     const FString ServerExePath = FPlatformProcess::ExecutablePath();
+#else
+    const FString ServerExePath = ResolveLocalDedicatedServerExecutable();
+#endif
 
     if (ServerExePath.IsEmpty() || !FPaths::FileExists(ServerExePath))
     {
         UE_LOG(
             LogTemp,
             Error,
-            TEXT("[LocalDedicatedServer] 서버 실행 파일을 찾을 수 없습니다: %s"),
+            TEXT("[LocalDedicatedServer] 서버 실행 파일을 찾을 수 없습니다: \"%s\" "
+                "(패키징 빌드라면 WindowsServer 산출물이 클라이언트와 같은 위치에 "
+                "스테이징되어 있는지 확인하세요.)"),
             *ServerExePath
         );
 
@@ -154,8 +288,9 @@ bool ULocalDedicatedServerLibrary::StartLocalDedicatedServer(
         *GLocalDedicatedServerReadyFilePath
     );
 #else
-    // ShootingArena.exe는 이미 이 프로젝트 전용으로 빌드된 실행 파일이라 프로젝트 경로가 필요
-    // 없고, -game 플래그도 의미가 없습니다. -server만 넘기면 헤드리스 데디케이티드 서버로 뜹니다.
+    // <Project>Server.exe 는 Server 타겟(UE_SERVER=1)이라 이미 데디케이티드 서버이고,
+    // 이 프로젝트 전용으로 빌드된 실행 파일이라 .uproject 경로도 -game 도 필요 없습니다.
+    // (-server 는 중복이지만 무해하므로 의도를 드러내기 위해 유지합니다.)
     const FString Params = FString::Printf(
         TEXT("%s -server -log -port=%d -LocalServerReadyFile=\"%s\""),
         *MapName,
@@ -402,21 +537,21 @@ bool ULocalDedicatedServerLibrary::MarkLocalDedicatedServerReady(
 
 bool ULocalDedicatedServerLibrary::StartMatchServer(const FString& MapName, int32 Port)
 {
-    if (IsMatchServerRunning())
+    // 주의: 로비 서버(그 자체가 StartMatchServer 로 스폰됨) -> 매치 서버 스폰이 정상 흐름입니다.
+    //
+    // "start match" 는 언제나 "새 매치 서버를 원한다" 는 뜻이므로, 이전 매치 서버가 아직
+    // 살아 있으면(이전 매치 종료 후 로비 복귀 시 정리 RPC가 누락됐거나 타이밍이 어긋난 경우 등)
+    // 재사용하지 않고 확실히 종료한 뒤 새로 띄웁니다. 이렇게 하지 않으면 클라이언트가
+    // 이전 매치 상태(누적된 AI 등)가 그대로 남은 낡은 서버로 다시 접속하는 버그가 있었습니다.
+    if (IsMatchServerRunning() || GMatchServerHandle.IsValid())
     {
         UE_LOG(
             LogTemp,
             Warning,
-            TEXT("[MatchServer] 이미 실행 중인 매치 서버가 있어 새로 시작하지 않습니다.")
+            TEXT("[MatchServer] 이전 매치 서버가 남아 있어 종료 후 새로 시작합니다.")
         );
 
-        return false;
-    }
-
-    if (GMatchServerHandle.IsValid())
-    {
-        FPlatformProcess::CloseProc(GMatchServerHandle);
-        GMatchServerHandle.Reset();
+        StopMatchServer();
     }
 
     const FString ReadyDirectory = FPaths::ConvertRelativePathToFull(
@@ -454,16 +589,22 @@ bool ULocalDedicatedServerLibrary::StartMatchServer(const FString& MapName, int3
         true
     );
 
-    // StartLocalDedicatedServer와 마찬가지로, 별도의 Server 타겟 대신 지금 이 프로세스 자신의
-    // 실행 파일을 그대로 재사용합니다 (Installed Build 엔진은 Server 타겟 빌드를 지원하지 않습니다).
+    // StartLocalDedicatedServer와 동일: 에디터는 이 프로세스(UnrealEditor.exe)를 재실행하고,
+    // 패키징 빌드는 함께 스테이징된 별도 Server 타겟 실행 파일(<Project>Server.exe)을 찾습니다.
+#if WITH_EDITOR
     const FString ServerExePath = FPlatformProcess::ExecutablePath();
+#else
+    const FString ServerExePath = ResolveLocalDedicatedServerExecutable();
+#endif
 
     if (ServerExePath.IsEmpty() || !FPaths::FileExists(ServerExePath))
     {
         UE_LOG(
             LogTemp,
             Error,
-            TEXT("[MatchServer] 서버 실행 파일을 찾을 수 없습니다: %s"),
+            TEXT("[MatchServer] 서버 실행 파일을 찾을 수 없습니다: \"%s\" "
+                "(패키징 빌드라면 WindowsServer 산출물이 클라이언트와 같은 위치에 "
+                "스테이징되어 있는지 확인하세요.)"),
             *ServerExePath
         );
 
