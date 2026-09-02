@@ -381,7 +381,14 @@ void UCharacterAppearanceComponent::ApplyDeathPartMaterials(
 
 			for (const FSkeletalMaterial& sourceMaterial : sourceMaterials)
 			{
-				if (sourceMaterial.MaterialSlotName == targetSlotName || sourceMaterial.ImportedMaterialSlotName == targetSlotName)
+
+				bool bMatchesSlot = sourceMaterial.MaterialSlotName == targetSlotName;
+
+#if WITH_EDITORONLY_DATA
+				bMatchesSlot = bMatchesSlot || (sourceMaterial.ImportedMaterialSlotName == targetSlotName);
+#endif
+
+				if (bMatchesSlot)
 				{
 					matchedMaterial = sourceMaterial.MaterialInterface;
 					break;
