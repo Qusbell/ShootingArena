@@ -16,6 +16,10 @@
 *.ini   text
 *.json  text
 
+# 윈도우 배치 파일은 항상 CRLF (LF면 cmd.exe에서 파싱이 깨져 창이 바로 닫힘)
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+
 # 텍스처 / 이미지 (LFS)
 *.png   filter=lfs diff=lfs merge=lfs -text
 *.jpg   filter=lfs diff=lfs merge=lfs -text
