@@ -22,11 +22,6 @@ namespace
 	constexpr TCHAR LocalServerReadyArgument[] =
 		TEXT("LocalServerReadyFile=");
 
-	// StartMatchServer가 스폰한 매치 서버 프로세스에 붙이는 표식(bare param).
-	// 매치 서버가 자기 자신을 또 스폰하는 것을 막는 데 씁니다.
-	constexpr TCHAR SpawnedMatchServerArgument[] =
-		TEXT("SpawnedMatchServer");
-
 	// 매치 서버(로비 서버가 스폰하는 별도 프로세스)용 핸들/Ready 파일 경로.
 	// 위 캠페인용 상태와는 완전히 독립적으로 추적합니다.
 	FProcHandle GMatchServerHandle;
@@ -542,19 +537,9 @@ bool ULocalDedicatedServerLibrary::MarkLocalDedicatedServerReady(
 
 bool ULocalDedicatedServerLibrary::StartMatchServer(const FString& MapName, int32 Port)
 {
-    // 매치 서버 프로세스 자신이 (맵의 GameMode 등에서) 또 매치 서버를 스폰하는 것을 막습니다.
-    // 로비 서버는 이 표식이 없으므로 정상적으로 매치 서버를 스폰할 수 있습니다.
-    if (FParse::Param(FCommandLine::Get(), SpawnedMatchServerArgument))
-    {
-        UE_LOG(
-            LogTemp,
-            Warning,
-            TEXT("[MatchServer] 이 프로세스는 스폰된 매치 서버이므로 또 다른 매치 서버를 시작하지 않습니다.")
-        );
-
-        return false;
-    }
-
+    // 주의: 로비 서버(그 자체가 StartMatchServer 로 스폰됨) -> 매치 서버 스폰이 정상 흐름이므로
+    // "스폰된 서버 안에서는 호출 금지" 같은 가드를 두지 않습니다. 중복 스폰은 아래
+    // IsMatchServerRunning() 체크로 막습니다.
     if (IsMatchServerRunning())
     {
         UE_LOG(
@@ -639,7 +624,7 @@ bool ULocalDedicatedServerLibrary::StartMatchServer(const FString& MapName, int3
         );
 
     const FString Params = FString::Printf(
-        TEXT("\"%s\" %s -server -SpawnedMatchServer -log -port=%d -LocalServerReadyFile=\"%s\""),
+        TEXT("\"%s\" %s -server -log -port=%d -LocalServerReadyFile=\"%s\""),
         *ProjectFilePath,
         *MapName,
         Port,
@@ -647,7 +632,7 @@ bool ULocalDedicatedServerLibrary::StartMatchServer(const FString& MapName, int3
     );
 #else
     const FString Params = FString::Printf(
-        TEXT("%s -server -SpawnedMatchServer -log -port=%d -LocalServerReadyFile=\"%s\""),
+        TEXT("%s -server -log -port=%d -LocalServerReadyFile=\"%s\""),
         *MapName,
         Port,
         *GMatchServerReadyFilePath
