@@ -1,4 +1,5 @@
 #include "MyPlayerController.h"
+#include "HAL/PlatformMisc.h"
 
 void AMyPlayerController::PawnLeavingGame()
 {
@@ -56,4 +57,17 @@ void AMyPlayerController::ServerReturnToLobby_Implementation()
 bool AMyPlayerController::IsStandaloneGame() const
 {
 	return GetNetMode() == NM_Standalone;
+}
+
+// 결과창에서 매치 서버를 떠날 때 호출됩니다. 이 프로세스 자신을 정상 종료시킵니다.
+// 에디터에서 리슨 서버로 테스트할 때 실수로 에디터 프로세스 자체가 꺼지지 않도록,
+// 진짜 데디케이티드 서버 프로세스에서만 실제로 종료합니다.
+void AMyPlayerController::ServerShutdownMatchServer_Implementation()
+{
+	if (!IsRunningDedicatedServer())
+	{
+		return;
+	}
+
+	FPlatformMisc::RequestExit(false);
 }

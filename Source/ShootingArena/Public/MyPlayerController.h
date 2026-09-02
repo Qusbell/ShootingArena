@@ -38,4 +38,12 @@ public:
 	// 캠페인(로컬 단독 실행)은 항상 true, 로비를 거친 멀티플레이(데디케이트 서버 접속)는 항상 false입니다.
 	UFUNCTION(BlueprintPure, Category = "Network")
 	bool IsStandaloneGame() const;
+
+	// 결과창(WBP_Result)에서 "메인메뉴로"/"로비로" 버튼을 눌러 매치 서버를 떠날 때 호출합니다.
+	// 이 매치 서버 프로세스 자기 자신을 정상 종료시켜서, 로비 프로세스가 나중에 정리해주길
+	// 기다리지 않고 즉시 자원을 반환합니다 (그래야 다음 매치가 포트 충돌 없이 뜹니다).
+	// 캠페인은 별도로 "Stop Single Server"(GameInstance, 클라이언트 측)로 정리되므로 이 함수는
+	// 호출하는 쪽(Blueprint)에서 멀티플레이 세션일 때만 부르면 됩니다.
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Match")
+	void ServerShutdownMatchServer();
 };

@@ -2,6 +2,7 @@
 #include "LobbyGameState.h"
 #include "LobbyGameMode.h"
 #include "ShootingArenaGameInstance.h"
+#include "LocalDedicatedServerLibrary.h"
 #include "GameFramework/PlayerState.h"
 
 ALobbyGameState* ALobbyPlayerController::GetLobbyGameState() const
@@ -172,4 +173,14 @@ void ALobbyPlayerController::Server_StartGame_Implementation()
 	{
 		LobbyGameMode->OnLobbyStartGameApproved(LobbyGameState->SelectedMapID);
 	}
+}
+
+void ALobbyPlayerController::Server_CleanupMatchServer_Implementation()
+{
+	if (!IsHost())
+	{
+		return;
+	}
+
+	ULocalDedicatedServerLibrary::StopMatchServer();
 }
