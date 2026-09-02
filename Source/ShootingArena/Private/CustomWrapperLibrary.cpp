@@ -462,3 +462,52 @@ bool UCustomWrapperLibrary::SuggestJumpPadVelocity(
 	OutLaunchVelocity = DirXY * Vxy + FVector(0.0f, 0.0f, VzUp);
 	return true;
 }
+
+
+bool UCustomWrapperLibrary::SuggestJumpPadVelocityByApexTime(
+	UObject* WorldContextObject,
+	FVector StartPoint,
+	FVector TargetPoint,
+	float ApexTime,
+	FVector& OutLaunchVelocity,
+	float GravityZOverride)
+{
+	OutLaunchVelocity = FVector::ZeroVector;
+
+	if (ApexTime <= KINDA_SMALL_NUMBER)
+	{
+		return false;
+	}
+
+	// 비행 중 적용될 중력 가속도 크기 (양수). Override 가 없으면 월드 중력에서 읽는다.
+	float G = FMath::Abs(GravityZOverride);
+	if (G <= KINDA_SMALL_NUMBER)
+	{
+		const UWorld* World = GEngine
+			? GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull)
+			: nullptr;
+		if (!World)
+		{
+			return false;
+		}
+		G = FMath::Abs(World->GetGravityZ());
+	}
+
+	if (G <= KINDA_SMALL_NUMBER)
+	{
+		return false;
+	}
+
+	const FVector Delta = TargetPoint - StartPoint;
+
+	// 수평속도: ApexTime 동안 수평 변위를 모두 커버 (비행 내내 일정, 공기저항 없음)
+	const float Vx = Delta.X / ApexTime;
+	const float Vy = Delta.Y / ApexTime;
+
+	// 수직속도: ApexTime 시점에 목표 높이에 도달하도록 중력 낙하량을 보정
+	//   Delta.Z = Vz * ApexTime - 0.5 * G * ApexTime^2  →  Vz = (Delta.Z + 0.5*G*ApexTime^2) / ApexTime
+	const float Vz = (Delta.Z + 0.5f * G * ApexTime * ApexTime) / ApexTime;
+
+	OutLaunchVelocity = FVector(Vx, Vy, Vz);
+	return true;
+}

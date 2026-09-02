@@ -1,5 +1,7 @@
 #include "MyReconnectionGameMode.h"
 #include "Kismet/GameplayStatics.h"
+#include "ShootingArenaGameInstance.h"
+#include "GameFramework/PlayerState.h"
 
 FString AMyReconnectionGameMode::InitNewPlayer(APlayerController* NewPlayerController,
     const FUniqueNetIdRepl& UniqueId,
@@ -10,14 +12,40 @@ FString AMyReconnectionGameMode::InitNewPlayer(APlayerController* NewPlayerContr
 
 	if (ErrorMessage.IsEmpty() && NewPlayerController)
 	{
-		// 1. URL¿¡¼­ ÅäÅ« ÆÄ½Ì
+		// 1. URLï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Å« ï¿½Ä½ï¿½
 		FString ExtractedToken = UGameplayStatics::ParseOption(Options, TEXT("Token"));
 
-		// 2. [ÇÙ½É] ÇÃ·¹ÀÌ¾î ÄÁÆ®·Ñ·¯¿¡°Ô ÀÎÅÍÆäÀÌ½º ¸Þ½ÃÁö·Î ÅäÅ«À» Åö ´øÁý´Ï´Ù.
-		// ¸¸¾à ÄÁÆ®·Ñ·¯°¡ ÀÌ ÀÎÅÍÆäÀÌ½º¸¦ ±¸Çö ¾È Çß´Ù¸é, ±×³É ¾Æ¹« ÀÏµµ ÀÏ¾î³ªÁö ¾Ê°í ¾ÈÀüÇÏ°Ô ³Ñ¾î°©´Ï´Ù (´øÁö±â Àå¶¯).
+		// 2. [ï¿½Ù½ï¿½] ï¿½Ã·ï¿½ï¿½Ì¾ï¿½ ï¿½ï¿½Æ®ï¿½Ñ·ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ì½ï¿½ ï¿½Þ½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Å«ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ï´ï¿½.
+		// ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Æ®ï¿½Ñ·ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ì½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ß´Ù¸ï¿½, ï¿½×³ï¿½ ï¿½Æ¹ï¿½ ï¿½Ïµï¿½ ï¿½Ï¾î³ªï¿½ï¿½ ï¿½Ê°ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ï°ï¿½ ï¿½Ñ¾î°©ï¿½Ï´ï¿½ (ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½å¶¯).
 		if (NewPlayerController->GetClass()->ImplementsInterface(UReconnectionInterface::StaticClass()))
 		{
 			IReconnectionInterface::Execute_SetConnectionToken(NewPlayerController, ExtractedToken);
+		}
+
+		// ë‹‰ë„¤ìž„ ì ìš©. ìš°ì„ ìˆœìœ„:
+		// 1. ì ‘ì† URLì— ì§ì ‘ ì‹¤ë ¤ì˜¨ "?Nickname=" ì˜µì…˜ (ë¡œë¹„ ì„œë²„ì™€ ë³„ë„ í”„ë¡œì„¸ìŠ¤ì¸ ë§¤ì¹˜ ì„œë²„ë¡œ
+		//    ì ‘ì†í•  ë•Œ ì´ ë°©ë²•ì„ ì”ë‹ˆë‹¤ â€” ë§¤ì¹˜ ì„œë²„ëŠ” ë¡œë¹„ì™€ GameInstanceë¥¼ ê³µìœ í•˜ì§€ ì•Šì•„ì„œ
+		//    ì•„ëž˜ 2ë²ˆ ë°©ë²•ìœ¼ë¡œëŠ” ë‹‰ë„¤ìž„ì„ ì•Œ ìˆ˜ ì—†ê¸° ë•Œë¬¸ìž…ë‹ˆë‹¤.)
+		// 2. ì´ì „ ë ˆë²¨(ê°™ì€ í”„ë¡œì„¸ìŠ¤ ì•ˆì—ì„œì˜ ë¡œë¹„ ë“±)ì—ì„œ ì €ìž¥í•´ë‘” ë‹‰ë„¤ìž„ (GameInstance ì¡°íšŒ)
+		if (APlayerState* NewPlayerState = NewPlayerController->PlayerState)
+		{
+			const FString NicknameOption = UGameplayStatics::ParseOption(Options, TEXT("Nickname"));
+
+			// [DEBUG] ìž„ì‹œ ë¡œê·¸ - ë¬¸ì œ í•´ê²°ë˜ë©´ ì œê±° ì˜ˆì •
+			UE_LOG(LogTemp, Warning, TEXT("[NicknameDebug] Options=\"%s\" ParsedNickname=\"%s\""), *Options, *NicknameOption);
+
+			if (!NicknameOption.IsEmpty())
+			{
+				NewPlayerState->SetPlayerName(NicknameOption);
+			}
+			else if (UShootingArenaGameInstance* SAGameInstance = Cast<UShootingArenaGameInstance>(GetWorld() ? GetWorld()->GetGameInstance() : nullptr))
+			{
+				const FString SavedNickname = SAGameInstance->GetSavedNickname(NewPlayerState->SavedNetworkAddress);
+				if (!SavedNickname.IsEmpty())
+				{
+					NewPlayerState->SetPlayerName(SavedNickname);
+				}
+			}
 		}
 	}
 
