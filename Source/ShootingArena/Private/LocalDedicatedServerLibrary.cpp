@@ -62,10 +62,7 @@ namespace
 			}
 		}
 
-		// 2) 로컬 어댑터 중 VPN 대역을 찾습니다.
-		//    - Hamachi:        25.x.x.x
-		//    - Radmin VPN:     26.x.x.x
-		//    - Tailscale/CGNAT: 100.64.0.0 ~ 100.127.255.255 (100.64.0.0/10)
+		// 2) 로컬 어댑터 중 VPN 대역(Hamachi 25.x.x.x, Radmin VPN 26.x.x.x)을 찾습니다.
 		ISocketSubsystem* SocketSubsystem = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
 		if (SocketSubsystem == nullptr)
 		{
@@ -83,25 +80,9 @@ namespace
 			}
 
 			const FString AddrString = LocalAddr->ToString(false);
-
 			if (AddrString.StartsWith(TEXT("25.")) || AddrString.StartsWith(TEXT("26.")))
 			{
 				return AddrString;
-			}
-
-			// 100.64.0.0/10 (Tailscale 등) 판별: 첫 옥텟 100, 둘째 옥텟 64~127.
-			if (AddrString.StartsWith(TEXT("100.")))
-			{
-				TArray<FString> Octets;
-				AddrString.ParseIntoArray(Octets, TEXT("."));
-				if (Octets.Num() == 4)
-				{
-					const int32 SecondOctet = FCString::Atoi(*Octets[1]);
-					if (SecondOctet >= 64 && SecondOctet <= 127)
-					{
-						return AddrString;
-					}
-				}
 			}
 		}
 
