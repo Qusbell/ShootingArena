@@ -104,4 +104,14 @@ public:
 	*/
 	UFUNCTION(BlueprintPure, Category = "Server|MatchServer", meta = (Keywords = "Match Server Ready Dedicated Process"))
 	static bool IsMatchServerReady();
+
+	/**
+	* 주어진 IP 주소가 "이 PC 자신의 주소"인지 확인합니다.
+	* (빈 문자열 / "127.0.0.1" / "localhost" / 로컬 네트워크 어댑터 주소 — Hamachi 가상 어댑터의
+	*  25.x.x.x 도 포함 — 중 하나면 true)
+	*
+	* 메인 메뉴에서 "입력한 IP == 내 IP => 내가 호스트, 아니면 => 게스트"로 분기하는 데 씁니다.
+	*/
+	UFUNCTION(BlueprintPure, Category = "Server|LocalDedicatedServer", meta = (Keywords = "Local IP Address Host Self"))
+	static bool IsLocalIPAddress(const FString& IPAddress);
 };

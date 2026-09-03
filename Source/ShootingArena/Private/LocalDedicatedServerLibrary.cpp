@@ -4,11 +4,13 @@
 #include "Engine/World.h"
 #include "HAL/FileManager.h"
 #include "HAL/PlatformProcess.h"
+#include "IPAddress.h"
 #include "Misc/App.h"
 #include "Misc/CommandLine.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Parse.h"
 #include "Misc/Paths.h"
+#include "SocketSubsystem.h"
 
 namespace
 {
@@ -730,4 +732,45 @@ bool ULocalDedicatedServerLibrary::IsMatchServerReady()
     return FPaths::FileExists(
         GMatchServerReadyFilePath
     );
+}
+
+bool ULocalDedicatedServerLibrary::IsLocalIPAddress(const FString& IPAddress)
+{
+    const FString Trimmed = IPAddress.TrimStartAndEnd();
+
+    if (Trimmed.IsEmpty()
+        || Trimmed == TEXT("127.0.0.1")
+        || Trimmed.Equals(TEXT("localhost"), ESearchCase::IgnoreCase))
+    {
+        return true;
+    }
+
+    ISocketSubsystem* SocketSubsystem = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
+
+    if (SocketSubsystem == nullptr)
+    {
+        UE_LOG(LogTemp, Warning,
+            TEXT("[LocalDedicatedServer] IsLocalIPAddress: SocketSubsystem 을 가져오지 못했습니다."));
+        return false;
+    }
+
+    TArray<TSharedPtr<FInternetAddr>> LocalAddresses;
+    SocketSubsystem->GetLocalAdapterAddresses(LocalAddresses);
+
+    for (const TSharedPtr<FInternetAddr>& LocalAddr : LocalAddresses)
+    {
+        if (LocalAddr.IsValid() && LocalAddr->ToString(false) == Trimmed)
+        {
+            UE_LOG(LogTemp, Log,
+                TEXT("[LocalDedicatedServer] IsLocalIPAddress: '%s' 는 이 PC의 주소입니다 -> 호스트."),
+                *Trimmed);
+            return true;
+        }
+    }
+
+    UE_LOG(LogTemp, Log,
+        TEXT("[LocalDedicatedServer] IsLocalIPAddress: '%s' 는 이 PC의 주소가 아닙니다 -> 게스트."),
+        *Trimmed);
+
+    return false;
 }
