@@ -6,7 +6,6 @@
 #include "Components/CapsuleComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
-#include "Engine/TargetPoint.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/Controller.h"
 #include "GameFramework/PlayerController.h"
@@ -14,6 +13,45 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
+
+namespace OneWayTeleportPrivate
+{
+	// 모든 Portal이 공유합니다. 따라서 A -> B로 이동하면서 B의 Overlap이 즉시
+	// 발생해도 B가 같은 Character를 다시 텔레포트하지 않습니다.
+	TMap<TWeakObjectPtr<AActor>, double> ReentryUnlockTimes;
+
+	bool IsReentryLocked(AActor* actor, double currentTime)
+	{
+		const TWeakObjectPtr<AActor> weakActor(actor);
+		if (const double* unlockTime = ReentryUnlockTimes.Find(weakActor))
+		{
+			return *unlockTime > currentTime;
+		}
+
+		return false;
+	}
+
+	void LockReentry(AActor* actor, double unlockTime)
+	{
+		ReentryUnlockTimes.Add(TWeakObjectPtr<AActor>(actor), unlockTime);
+	}
+
+	void UnlockReentry(AActor* actor)
+	{
+		ReentryUnlockTimes.Remove(TWeakObjectPtr<AActor>(actor));
+	}
+
+	void RemoveExpiredLocks(double currentTime)
+	{
+		for (auto iterator = ReentryUnlockTimes.CreateIterator(); iterator; ++iterator)
+		{
+			if (!iterator.Key().IsValid() || iterator.Value() <= currentTime)
+			{
+				iterator.RemoveCurrent();
+			}
+		}
+	}
+}
 
 AOneWayTeleportActor::AOneWayTeleportActor()
 {
@@ -193,6 +231,11 @@ void AOneWayTeleportActor::OnEntryBeginOverlap(
 		return;
 	}
 
+	if (!bTeleportEnabled)
+	{
+		return;
+	}
+
 	ACharacter* character = Cast<ACharacter>(otherActor);
 	if (!IsValid(character))
 	{
@@ -200,6 +243,13 @@ void AOneWayTeleportActor::OnEntryBeginOverlap(
 	}
 
 	if (otherComp != character->GetCapsuleComponent())
+	{
+		return;
+	}
+
+	const double currentTime = GetWorld()->GetTimeSeconds();
+	OneWayTeleportPrivate::RemoveExpiredLocks(currentTime);
+	if (OneWayTeleportPrivate::IsReentryLocked(character, currentTime))
 	{
 		return;
 	}
@@ -240,13 +290,23 @@ void AOneWayTeleportActor::TeleportCharacter(ACharacter* character)
 
 	const FVector exitLocation = exitTarget->GetActorLocation();
 	const FRotator exitRotation = GetExitFacingRotation();
+	const double currentTime = GetWorld()->GetTimeSeconds();
+	OneWayTeleportPrivate::LockReentry(
+		character,
+		currentTime + FMath::Max(0.0f, reentryLockDuration));
 
-	character->SetActorLocationAndRotation(
+	const bool bTeleported = character->SetActorLocationAndRotation(
 		exitLocation,
 		exitRotation,
 		false,
 		nullptr,
 		ETeleportType::TeleportPhysics);
+
+	if (!bTeleported)
+	{
+		OneWayTeleportPrivate::UnlockReentry(character);
+		return;
+	}
 
 	if (AController* controller = character->GetController())
 	{
