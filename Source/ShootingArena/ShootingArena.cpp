@@ -1,6 +1,9 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "ShootingArena.h"
+#include "Loading/LoadingScreenSubsystem.h"
+#include "Engine/GameInstance.h"
+#include "Engine/World.h"
 #include "Modules/ModuleManager.h"
 
 #if WITH_EDITOR
@@ -19,6 +22,23 @@ public:
     virtual void StartupModule() override
     {
         FDefaultGameModuleImpl::StartupModule();
+
+        // GameInstanceSubsystem은 원칙적으로 자동 생성되지만, Standalone/PIE의
+        // 게임 인스턴스 생성 순서에 영향을 받지 않도록 게임 월드가 준비되는 즉시
+        // 명시적으로 확보합니다. 이 호출은 기존 BP나 게임플레이 로직을 바꾸지 않습니다.
+        PostWorldInitializationHandle = FWorldDelegates::OnPostWorldInitialization.AddLambda(
+            [](UWorld* World, const UWorld::InitializationValues)
+            {
+                if (!IsValid(World) || !World->IsGameWorld() || World->GetNetMode() == NM_DedicatedServer)
+                {
+                    return;
+                }
+
+                if (UGameInstance* GameInstance = World->GetGameInstance())
+                {
+                    GameInstance->GetSubsystem<ULoadingScreenSubsystem>();
+                }
+            });
 
 #if WITH_EDITOR
         FGameplayValidatorPathLinkBridge::FCallbacks Callbacks;
@@ -59,12 +79,21 @@ public:
 
     virtual void ShutdownModule() override
     {
+        if (PostWorldInitializationHandle.IsValid())
+        {
+            FWorldDelegates::OnPostWorldInitialization.Remove(PostWorldInitializationHandle);
+            PostWorldInitializationHandle.Reset();
+        }
+
 #if WITH_EDITOR
         FGameplayValidatorPathLinkBridge::Unregister();
 #endif
 
         FDefaultGameModuleImpl::ShutdownModule();
     }
+
+private:
+    FDelegateHandle PostWorldInitializationHandle;
 };
 
 IMPLEMENT_PRIMARY_GAME_MODULE(FShootingArenaGameModule, ShootingArena, "ShootingArena");
