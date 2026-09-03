@@ -4,11 +4,13 @@
 #include "Engine/World.h"
 #include "HAL/FileManager.h"
 #include "HAL/PlatformProcess.h"
+#include "IPAddress.h"
 #include "Misc/App.h"
 #include "Misc/CommandLine.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Parse.h"
 #include "Misc/Paths.h"
+#include "SocketSubsystem.h"
 
 namespace
 {
@@ -35,6 +37,75 @@ namespace
 		FString Unused;
 		return FParse::Value(
 			FCommandLine::Get(), LocalServerReadyArgument, Unused);
+	}
+
+	// 매치/로비 서버 프로세스가 바인딩할 로컬 주소를 결정합니다.
+	// 반환값이 비어있지 않으면 스폰 인자에 -MultiHome=<addr> 로 붙습니다.
+	//
+	// UE 데디케이티드 서버는 기본적으로 0.0.0.0(모든 어댑터)에 바인딩하는데,
+	// Hamachi 같은 VPN 어댑터 + 물리 LAN 어댑터가 공존하는 멀티홈 환경에서는
+	// "게스트가 보낸 패킷은 VPN 어댑터로 받지만, 응답은 기본 라우트(물리 LAN)의
+	// 소스 IP로 나가버려서" 게스트가 응답을 무시 -> 접속 타임아웃이 됩니다
+	// (LogNet: "Sent N packets ... no packets received yet" -> ConnectionTimeout).
+	// -MultiHome 으로 VPN 주소에 명시적으로 바인딩하면 응답도 그 주소에서 나갑니다.
+	FString ResolveServerBindAddress()
+	{
+		// 1) 현재 프로세스가 이미 -MultiHome 으로 떠 있으면 그대로 물려줍니다.
+		//    (호스트 클라이언트 -> 로비 서버 -> 매치 서버 로 전파되도록)
+		FString FromCmdLine;
+		if (FParse::Value(FCommandLine::Get(), TEXT("MultiHome="), FromCmdLine))
+		{
+			FromCmdLine = FromCmdLine.TrimStartAndEnd();
+			if (!FromCmdLine.IsEmpty())
+			{
+				return FromCmdLine;
+			}
+		}
+
+		// 2) 로컬 어댑터 중 VPN 대역을 찾습니다.
+		//    - Hamachi:        25.x.x.x
+		//    - Radmin VPN:     26.x.x.x
+		//    - Tailscale/CGNAT: 100.64.0.0 ~ 100.127.255.255 (100.64.0.0/10)
+		ISocketSubsystem* SocketSubsystem = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
+		if (SocketSubsystem == nullptr)
+		{
+			return FString();
+		}
+
+		TArray<TSharedPtr<FInternetAddr>> LocalAddresses;
+		SocketSubsystem->GetLocalAdapterAddresses(LocalAddresses);
+
+		for (const TSharedPtr<FInternetAddr>& LocalAddr : LocalAddresses)
+		{
+			if (!LocalAddr.IsValid())
+			{
+				continue;
+			}
+
+			const FString AddrString = LocalAddr->ToString(false);
+
+			if (AddrString.StartsWith(TEXT("25.")) || AddrString.StartsWith(TEXT("26.")))
+			{
+				return AddrString;
+			}
+
+			// 100.64.0.0/10 (Tailscale 등) 판별: 첫 옥텟 100, 둘째 옥텟 64~127.
+			if (AddrString.StartsWith(TEXT("100.")))
+			{
+				TArray<FString> Octets;
+				AddrString.ParseIntoArray(Octets, TEXT("."));
+				if (Octets.Num() == 4)
+				{
+					const int32 SecondOctet = FCString::Atoi(*Octets[1]);
+					if (SecondOctet >= 64 && SecondOctet <= 127)
+					{
+						return AddrString;
+					}
+				}
+			}
+		}
+
+		return FString();
 	}
 
 	// 패키징된 빌드에서 로컬에 띄울 "진짜" Dedicated Server 실행 파일
@@ -612,6 +683,24 @@ bool ULocalDedicatedServerLibrary::StartMatchServer(const FString& MapName, int3
         return false;
     }
 
+    // 멀티홈(Hamachi 등 VPN + 물리 LAN 공존) 환경에서 서버가 VPN 주소로 응답을
+    // 내보내도록, VPN 어댑터 주소를 찾아 -MultiHome 으로 넘깁니다. 못 찾으면 빈 문자열
+    // (= 기존처럼 0.0.0.0 바인딩). ResolveServerBindAddress 주석 참고.
+    const FString BindAddress = ResolveServerBindAddress();
+    const FString MultiHomeArg = BindAddress.IsEmpty()
+        ? FString()
+        : FString::Printf(TEXT(" -MultiHome=%s"), *BindAddress);
+
+    if (!BindAddress.IsEmpty())
+    {
+        UE_LOG(
+            LogTemp,
+            Warning,
+            TEXT("[MatchServer] 서버를 %s 에 바인딩합니다 (-MultiHome). VPN 멀티홈 환경 대응."),
+            *BindAddress
+        );
+    }
+
     // MapName에 "?Game=..." "?AIEasy=1" 같은 URL 옵션이 이미 이어붙어 있어도 그대로 통과시킵니다.
     // (StartLocalDedicatedServer와 달리 원래부터 -game 없이 -server만으로 잘 동작했으므로 그대로 유지합니다.)
 #if WITH_EDITOR
@@ -621,17 +710,19 @@ bool ULocalDedicatedServerLibrary::StartMatchServer(const FString& MapName, int3
         );
 
     const FString Params = FString::Printf(
-        TEXT("\"%s\" %s -server -log -port=%d -LocalServerReadyFile=\"%s\""),
+        TEXT("\"%s\" %s -server -log -port=%d%s -LocalServerReadyFile=\"%s\""),
         *ProjectFilePath,
         *MapName,
         Port,
+        *MultiHomeArg,
         *GMatchServerReadyFilePath
     );
 #else
     const FString Params = FString::Printf(
-        TEXT("%s -server -log -port=%d -LocalServerReadyFile=\"%s\""),
+        TEXT("%s -server -log -port=%d%s -LocalServerReadyFile=\"%s\""),
         *MapName,
         Port,
+        *MultiHomeArg,
         *GMatchServerReadyFilePath
     );
 #endif
@@ -730,4 +821,45 @@ bool ULocalDedicatedServerLibrary::IsMatchServerReady()
     return FPaths::FileExists(
         GMatchServerReadyFilePath
     );
+}
+
+bool ULocalDedicatedServerLibrary::IsLocalIPAddress(const FString& IPAddress)
+{
+    const FString Trimmed = IPAddress.TrimStartAndEnd();
+
+    if (Trimmed.IsEmpty()
+        || Trimmed == TEXT("127.0.0.1")
+        || Trimmed.Equals(TEXT("localhost"), ESearchCase::IgnoreCase))
+    {
+        return true;
+    }
+
+    ISocketSubsystem* SocketSubsystem = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
+
+    if (SocketSubsystem == nullptr)
+    {
+        UE_LOG(LogTemp, Warning,
+            TEXT("[LocalDedicatedServer] IsLocalIPAddress: SocketSubsystem 을 가져오지 못했습니다."));
+        return false;
+    }
+
+    TArray<TSharedPtr<FInternetAddr>> LocalAddresses;
+    SocketSubsystem->GetLocalAdapterAddresses(LocalAddresses);
+
+    for (const TSharedPtr<FInternetAddr>& LocalAddr : LocalAddresses)
+    {
+        if (LocalAddr.IsValid() && LocalAddr->ToString(false) == Trimmed)
+        {
+            UE_LOG(LogTemp, Log,
+                TEXT("[LocalDedicatedServer] IsLocalIPAddress: '%s' 는 이 PC의 주소입니다 -> 호스트."),
+                *Trimmed);
+            return true;
+        }
+    }
+
+    UE_LOG(LogTemp, Log,
+        TEXT("[LocalDedicatedServer] IsLocalIPAddress: '%s' 는 이 PC의 주소가 아닙니다 -> 게스트."),
+        *Trimmed);
+
+    return false;
 }

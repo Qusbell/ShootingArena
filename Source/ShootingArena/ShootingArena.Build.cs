@@ -18,7 +18,9 @@ public class ShootingArena : ModuleRules
             "AIModule",
             "DeveloperSettings",
             "Slate",
-            "SlateCore"
+            "SlateCore",
+            "Sockets",
+            "Networking"
         });
 
         PrivateDependencyModuleNames.AddRange(new string[] { });
