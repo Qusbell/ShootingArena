@@ -11,13 +11,13 @@ class UPrimitiveComponent;
 class UMaterialInterface;
 class UMaterialInstanceDynamic;
 class UTeleportDataAsset;
-class ATargetPoint;
 class ACharacter;
 
 /**
  * 기획서 기준 단방향 텔레포트 Actor입니다.
  *
  * - EntryCollision에 Character가 진입하면 발동
+ * - 지정된 모든 Actor를 exitTarget으로 사용할 수 있음
  * - exitTarget 위치로 즉시 이동
  * - exitTarget Yaw를 출구 정면으로 사용
  * - DataAsset의 launchAngle / launchPower로 Launch
@@ -68,13 +68,28 @@ protected:
 	// Teleport Settings
 	// ---------------------------------------------------------------------
 
-	/** 레벨 인스턴스에서는 사실상 이 값만 지정합니다. */
+	/**
+	 * 레벨에 배치된 임의의 Actor를 출구로 지정합니다.
+	 * TargetPoint뿐 아니라 다른 Portal Actor, Marker Actor 등도 사용할 수 있습니다.
+	 */
 	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Teleport")
-	TObjectPtr<ATargetPoint> exitTarget;
+	TObjectPtr<AActor> exitTarget;
 
 	/** BP 자식 Class Defaults에서 한 번 지정합니다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Teleport")
 	TObjectPtr<UTeleportDataAsset> teleportDA;
+
+	/** false이면 진입해도 텔레포트하지 않습니다. 런타임에는 서버에서 변경하세요. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Teleport")
+	bool bTeleportEnabled = true;
+
+	/**
+	 * 텔레포트 직후 다른 Portal의 Collision에 겹쳐도 다시 이동하지 않는 보호 시간입니다.
+	 * 두 Portal을 서로의 출구로 지정한 경우의 무한 왕복을 방지합니다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Teleport",
+		meta = (ClampMin = "0.0", UIMin = "0.0"))
+	float reentryLockDuration = 0.25f;
 
 	// ---------------------------------------------------------------------
 	// Visual Settings
