@@ -38,6 +38,12 @@ protected:
 		const FString& Options,
 		const FString& Portal) override;
 
+	// AGameModeBase 는 AGameMode 와 달리 PostLogin 에서 PlayerState::SavedNetworkAddress 를
+	// 채워주지 않습니다. ServerTravel(같은 프로세스) 후 GameInstance 로 닉네임을 재연결하려면
+	// 이 키가 필요하므로 여기서 직접 채우고, 저장된 닉네임이 있으면 적용합니다.
+	// (InitNewPlayer 시점엔 아직 PC 에 NetConnection 이 안 붙어 주소를 못 구합니다.)
+	virtual void PostLogin(APlayerController* NewPlayer) override;
+
 public:
 	// 이 레벨이 열릴 때 붙은 URL 옵션 전체를 반환합니다 (예: "?AIEasy=2?AINormal=1?AIHard=0").
 	// AGameModeBase::OptionsString은 protected라서 블루프린트에서 못 읽는데,

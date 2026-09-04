@@ -1,12 +1,63 @@
 #include "LobbyGameMode.h"
 #include "LobbyGameState.h"
+#include "ShootingArenaGameInstance.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
 #include "Engine/World.h"
+#include "TimerManager.h"
 
 ALobbyGameState* ALobbyGameMode::GetLobbyGameState() const
 {
 	return GetGameState<ALobbyGameState>();
+}
+
+void ALobbyGameMode::BeginPlay()
+{
+	Super::BeginPlay();
+
+	// 매치에서 로비로 돌아왔는데 원래 방장이 (아직) 재접속하지 않은 경우를 대비한 안전장치.
+	// 잠시 뒤에도 방장이 없으면 현재 접속자 중 첫 번째를 방장으로 지정합니다.
+	GetWorldTimerManager().SetTimer(HostFallbackTimerHandle, this, &ALobbyGameMode::EnsureHostAssignedFallback, 5.0f, false);
+}
+
+void ALobbyGameMode::AssignHost(APlayerController* NewHost)
+{
+	ALobbyGameState* LobbyGameState = GetLobbyGameState();
+	if (!LobbyGameState || !NewHost || !NewHost->PlayerState)
+	{
+		return;
+	}
+
+	LobbyGameState->HostPlayerState = NewHost->PlayerState;
+	LobbyGameState->OnLobbyStateChanged();
+
+	if (UShootingArenaGameInstance* GameInstance = GetGameInstance<UShootingArenaGameInstance>())
+	{
+		GameInstance->SavedHostNetworkAddress = NewHost->PlayerState->SavedNetworkAddress;
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("[LobbyDebug] AssignHost: %s (addr=%s)"),
+		*NewHost->PlayerState->GetPlayerName(), *NewHost->PlayerState->SavedNetworkAddress);
+}
+
+void ALobbyGameMode::EnsureHostAssignedFallback()
+{
+	ALobbyGameState* LobbyGameState = GetLobbyGameState();
+	if (!LobbyGameState || LobbyGameState->HostPlayerState != nullptr)
+	{
+		return;
+	}
+
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+	{
+		APlayerController* PC = It->Get();
+		if (IsValid(PC) && PC->PlayerState)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[LobbyDebug] EnsureHostAssignedFallback: 원래 방장 미복귀 → %s 를 방장으로."), *PC->PlayerState->GetPlayerName());
+			AssignHost(PC);
+			return;
+		}
+	}
 }
 
 void ALobbyGameMode::InitializeLobby(const FString& DefaultMapID, int32 MaxPlayerCount)
@@ -79,11 +130,20 @@ void ALobbyGameMode::PostLogin(APlayerController* NewPlayer)
 		LobbyGameState->ResetNonPlayerSlots();
 	}
 
-	// 아직 방장이 없다면 (=서버에 처음 들어온 플레이어라면) 방장으로 지정합니다.
+	// 방장 지정/복원. 매치를 다녀와 LobbyGameState 가 새로 생성되면 HostPlayerState 가 null 이므로,
+	// 재접속 순서와 무관하게 "원래 방장"을 다시 방장으로 만들어야 합니다.
 	if (LobbyGameState->HostPlayerState == nullptr)
 	{
-		LobbyGameState->HostPlayerState = NewPlayer->PlayerState;
-		LobbyGameState->OnLobbyStateChanged();
+		const UShootingArenaGameInstance* GameInstance = GetGameInstance<UShootingArenaGameInstance>();
+		const FString SavedHostAddr = GameInstance ? GameInstance->SavedHostNetworkAddress : FString();
+		const FString ThisAddr = NewPlayer->PlayerState->SavedNetworkAddress;
+
+		if (SavedHostAddr.IsEmpty() || (!ThisAddr.IsEmpty() && SavedHostAddr == ThisAddr))
+		{
+			// 저장된 방장이 아직 없거나(최초 로비), 이 플레이어가 저장된 방장 본인이면 방장으로.
+			AssignHost(NewPlayer);
+		}
+		// else: 저장된 방장이 따로 있고 이 사람은 아님 → 방장 재접속 대기 (안 오면 BeginPlay 의 fallback 타이머가 처리).
 	}
 }
 
@@ -117,6 +177,12 @@ void ALobbyGameMode::Logout(AController* Exiting)
 
 			LobbyGameState->HostPlayerState = NextHost;
 			LobbyGameState->OnLobbyStateChanged();
+
+			// 저장된 방장 주소도 새 방장으로 갱신 (원래 방장이 나갔으므로).
+			if (UShootingArenaGameInstance* GameInstance = GetGameInstance<UShootingArenaGameInstance>())
+			{
+				GameInstance->SavedHostNetworkAddress = NextHost ? NextHost->SavedNetworkAddress : FString();
+			}
 		}
 	}
 

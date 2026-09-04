@@ -1,6 +1,8 @@
 #include "MyPlayerController.h"
 #include "HAL/PlatformMisc.h"
 #include "Engine/World.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 
 void AMyPlayerController::PawnLeavingGame()
 {
@@ -74,12 +76,22 @@ bool AMyPlayerController::IsStandaloneGame() const
 }
 
 // 결과창에서 매치 서버를 떠날 때 호출됩니다. 이 프로세스 자신을 정상 종료시킵니다.
-// 에디터에서 리슨 서버로 테스트할 때 실수로 에디터 프로세스 자체가 꺼지지 않도록,
-// 진짜 데디케이티드 서버 프로세스에서만 실제로 종료합니다.
+// 단, "일회용으로 스폰된 매치 서버 프로세스" 일 때만 종료합니다.
+// 학교 배포처럼 RunServer.bat 으로 상주시키는 통일 서버(-LocalServerReadyFile 인자 없음)나
+// 에디터 리슨 서버에서는 절대 종료하지 않습니다 (누가 "메인메뉴로"를 눌러도 서버가 살아있어야 함).
 void AMyPlayerController::ServerShutdownMatchServer_Implementation()
 {
 	if (!IsRunningDedicatedServer())
 	{
+		return;
+	}
+
+	// 스폰된 로컬/매치 서버는 항상 "-LocalServerReadyFile=..." 인자를 갖고 실행됩니다.
+	FString UnusedReadyFile;
+	const bool bIsSpawnedDisposableServer = FParse::Value(FCommandLine::Get(), TEXT("LocalServerReadyFile="), UnusedReadyFile);
+	if (!bIsSpawnedDisposableServer)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[MatchServer] ServerShutdownMatchServer 무시: 상주(통일) 서버는 종료하지 않습니다."));
 		return;
 	}
 

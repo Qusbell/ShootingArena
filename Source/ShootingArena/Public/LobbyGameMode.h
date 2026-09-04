@@ -20,6 +20,7 @@ class SHOOTINGARENA_API ALobbyGameMode : public AMyReconnectionGameMode
 	GENERATED_BODY()
 
 public:
+	virtual void BeginPlay() override;
 	virtual void PostLogin(APlayerController* NewPlayer) override;
 	virtual void Logout(AController* Exiting) override;
 
@@ -52,6 +53,14 @@ public:
 private:
 	ALobbyGameState* GetLobbyGameState() const;
 
+	// 이 플레이어를 방장으로 지정하고 GameInstance에 방장 주소를 기록합니다.
+	void AssignHost(APlayerController* NewHost);
+
+	// 방장이 아직 없으면(원래 방장이 매치에서 안 돌아온 경우 등) 현재 접속자 중 첫 번째를 방장으로.
+	void EnsureHostAssignedFallback();
+
 	// 위 MarkMatchLaunched 참고. 매치가 나간 뒤 첫 번째 (재)접속에서 소비되고 false로 돌아갑니다.
 	bool bMatchLaunchedSinceLobbyReset = false;
+
+	FTimerHandle HostFallbackTimerHandle;
 };
