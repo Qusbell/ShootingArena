@@ -1,61 +1,275 @@
-{
-  "Rows": 
-  [
-    {
-      "RowName": "EasyDummy",
-      "Data": {
-        "Aim_Skill": 0.2,
-        "Aim_Accuracy": 0.2,
-        "View_Max_Change": 60,
-        "ReactionTime": 2.5,
-        "Aggression": 1.0,
-        "Self_Preservation": 1.0,
-        "Fire_Throttle": 0.9,
-        "Retreat_Threshold": 0.5,
-        "Chase_Threshold": 0.5
-      }
-    },
-    {
-      "RowName": "NormalDummy",
-      "Data": {
-        "Aim_Skill": 0.5,
-        "Aim_Accuracy": 0.5,
-        "View_Max_Change": 180,
-        "ReactionTime": 1.0,
-        "Aggression": 1.0,
-        "Self_Preservation": 1.0,
-        "Fire_Throttle": 0.5,
-        "Retreat_Threshold": 0.5,
-        "Chase_Threshold": 0.5
-      }
-    },
-    {
-      "RowName": "HardDummy",
-      "Data": {
-        "Aim_Skill": 0.9,
-        "Aim_Accuracy": 1.0,
-        "View_Max_Change": 360,
-        "ReactionTime": 0.2,
-        "Aggression": 1.0,
-        "Self_Preservation": 1.0,
-        "Fire_Throttle": 0.2,
-        "Retreat_Threshold": 0.5,
-        "Chase_Threshold": 0.5
-      }
-    },
-    {
-      "RowName": "LoadTestDummy",
-      "Data": {
-        "Aim_Skill": 0.9,
-        "Aim_Accuracy": 1.0,
-        "View_Max_Change": 360,
-        "ReactionTime": 0.2,
-        "Aggression": 1.0,
-        "Self_Preservation": 1.0,
-        "Fire_Throttle": 0.2,
-        "Retreat_Threshold": 0.5,
-        "Chase_Threshold": 0.5
-      }
-    }  
-  ]
-}
+[
+	{
+		"Name": "Dummy_Easy",
+		"Aim_Skill": 0.20000000000000001,
+		"Aim_Accuracy": 0.20000000000000001,
+		"View_Max_Change": 250,
+		"ReactionTime": 2.5,
+		"Aggression": 0.5,
+		"Self_Preservation": 0.5,
+		"Fire_Throttle": 0.90000000000000002,
+		"Aggression_Threshold": 0.5,
+		"Attack_Skill": 0,
+		"Jumper": 0.5
+	},
+	{
+		"Name": "Dummy_Normal",
+		"Aim_Skill": 0.5,
+		"Aim_Accuracy": 0.5,
+		"View_Max_Change": 270,
+		"ReactionTime": 1,
+		"Aggression": 0.5,
+		"Self_Preservation": 0.5,
+		"Fire_Throttle": 0.5,
+		"Aggression_Threshold": 0.5,
+		"Attack_Skill": 0.29999999999999999,
+		"Jumper": 0.5
+	},
+	{
+		"Name": "Dummy_Hard",
+		"Aim_Skill": 0.90000000000000002,
+		"Aim_Accuracy": 1,
+		"View_Max_Change": 330,
+		"ReactionTime": 0.20000000000000001,
+		"Aggression": 0.5,
+		"Self_Preservation": 0.5,
+		"Fire_Throttle": 0.20000000000000001,
+		"Aggression_Threshold": 0.5,
+		"Attack_Skill": 0.5,
+		"Jumper": 0.5
+	},
+	{
+		"Name": "BGH_Easy",
+		"Aim_Skill": 0.5,
+		"Aim_Accuracy": 0.5,
+		"View_Max_Change": 250,
+		"ReactionTime": 1,
+		"Aggression": 1,
+		"Self_Preservation": 1,
+		"Fire_Throttle": 0.5,
+		"Aggression_Threshold": 0,
+		"Attack_Skill": 0,
+		"Jumper": 0
+	},
+	{
+		"Name": "BGH_Normal",
+		"Aim_Skill": 0.5,
+		"Aim_Accuracy": 0.5,
+		"View_Max_Change": 270,
+		"ReactionTime": 1,
+		"Aggression": 1,
+		"Self_Preservation": 1,
+		"Fire_Throttle": 0.5,
+		"Aggression_Threshold": 0,
+		"Attack_Skill": 0,
+		"Jumper": 0
+	},
+	{
+		"Name": "BGH_Hard",
+		"Aim_Skill": 0.5,
+		"Aim_Accuracy": 0.5,
+		"View_Max_Change": 330,
+		"ReactionTime": 1,
+		"Aggression": 1,
+		"Self_Preservation": 1,
+		"Fire_Throttle": 0.5,
+		"Aggression_Threshold": 0,
+		"Attack_Skill": 0,
+		"Jumper": 0
+	},
+	{
+		"Name": "HBC_Easy",
+		"Aim_Skill": 0.5,
+		"Aim_Accuracy": 0.5,
+		"View_Max_Change": 250,
+		"ReactionTime": 1,
+		"Aggression": 1,
+		"Self_Preservation": 1,
+		"Fire_Throttle": 0.5,
+		"Aggression_Threshold": 0,
+		"Attack_Skill": 0,
+		"Jumper": 0
+	},
+	{
+		"Name": "HBC_Normal",
+		"Aim_Skill": 0.5,
+		"Aim_Accuracy": 0.5,
+		"View_Max_Change": 270,
+		"ReactionTime": 1,
+		"Aggression": 1,
+		"Self_Preservation": 1,
+		"Fire_Throttle": 0.5,
+		"Aggression_Threshold": 0,
+		"Attack_Skill": 0,
+		"Jumper": 0
+	},
+	{
+		"Name": "HBC_Hard",
+		"Aim_Skill": 0.5,
+		"Aim_Accuracy": 0.5,
+		"View_Max_Change": 330,
+		"ReactionTime": 1,
+		"Aggression": 1,
+		"Self_Preservation": 1,
+		"Fire_Throttle": 0.5,
+		"Aggression_Threshold": 0,
+		"Attack_Skill": 0,
+		"Jumper": 0
+	},
+	{
+		"Name": "LJH_Easy",
+		"Aim_Skill": 0.5,
+		"Aim_Accuracy": 0.5,
+		"View_Max_Change": 250,
+		"ReactionTime": 1,
+		"Aggression": 1,
+		"Self_Preservation": 1,
+		"Fire_Throttle": 0.5,
+		"Aggression_Threshold": 0,
+		"Attack_Skill": 0,
+		"Jumper": 0
+	},
+	{
+		"Name": "LJH_Normal",
+		"Aim_Skill": 0.5,
+		"Aim_Accuracy": 0.5,
+		"View_Max_Change": 270,
+		"ReactionTime": 1,
+		"Aggression": 1,
+		"Self_Preservation": 1,
+		"Fire_Throttle": 0.5,
+		"Aggression_Threshold": 0,
+		"Attack_Skill": 0,
+		"Jumper": 0
+	},
+	{
+		"Name": "LJH_Hard",
+		"Aim_Skill": 0.5,
+		"Aim_Accuracy": 0.5,
+		"View_Max_Change": 330,
+		"ReactionTime": 1,
+		"Aggression": 1,
+		"Self_Preservation": 1,
+		"Fire_Throttle": 0.5,
+		"Aggression_Threshold": 0,
+		"Attack_Skill": 0,
+		"Jumper": 0
+	},
+	{
+		"Name": "PJH_Easy",
+		"Aim_Skill": 0.5,
+		"Aim_Accuracy": 0.5,
+		"View_Max_Change": 250,
+		"ReactionTime": 1,
+		"Aggression": 1,
+		"Self_Preservation": 1,
+		"Fire_Throttle": 0.5,
+		"Aggression_Threshold": 0,
+		"Attack_Skill": 0,
+		"Jumper": 0
+	},
+	{
+		"Name": "PJH_Normal",
+		"Aim_Skill": 0.5,
+		"Aim_Accuracy": 0.5,
+		"View_Max_Change": 270,
+		"ReactionTime": 1,
+		"Aggression": 1,
+		"Self_Preservation": 1,
+		"Fire_Throttle": 0.5,
+		"Aggression_Threshold": 0,
+		"Attack_Skill": 0,
+		"Jumper": 0
+	},
+	{
+		"Name": "PJH_Hard",
+		"Aim_Skill": 0.5,
+		"Aim_Accuracy": 0.5,
+		"View_Max_Change": 330,
+		"ReactionTime": 1,
+		"Aggression": 1,
+		"Self_Preservation": 1,
+		"Fire_Throttle": 0.5,
+		"Aggression_Threshold": 0,
+		"Attack_Skill": 0,
+		"Jumper": 0
+	},
+	{
+		"Name": "YJS_Easy",
+		"Aim_Skill": 0.5,
+		"Aim_Accuracy": 0.5,
+		"View_Max_Change": 250,
+		"ReactionTime": 1,
+		"Aggression": 1,
+		"Self_Preservation": 1,
+		"Fire_Throttle": 0.5,
+		"Aggression_Threshold": 0,
+		"Attack_Skill": 0,
+		"Jumper": 0
+	},
+	{
+		"Name": "YJS_Normal",
+		"Aim_Skill": 0.5,
+		"Aim_Accuracy": 0.5,
+		"View_Max_Change": 270,
+		"ReactionTime": 1,
+		"Aggression": 1,
+		"Self_Preservation": 1,
+		"Fire_Throttle": 0.5,
+		"Aggression_Threshold": 0,
+		"Attack_Skill": 0,
+		"Jumper": 0
+	},
+	{
+		"Name": "YJS_Hard",
+		"Aim_Skill": 0.5,
+		"Aim_Accuracy": 0.5,
+		"View_Max_Change": 330,
+		"ReactionTime": 1,
+		"Aggression": 1,
+		"Self_Preservation": 1,
+		"Fire_Throttle": 0.5,
+		"Aggression_Threshold": 0,
+		"Attack_Skill": 0,
+		"Jumper": 0
+	},
+	{
+		"Name": "YJH_Easy",
+		"Aim_Skill": 0.5,
+		"Aim_Accuracy": 0.5,
+		"View_Max_Change": 250,
+		"ReactionTime": 1,
+		"Aggression": 1,
+		"Self_Preservation": 1,
+		"Fire_Throttle": 0.5,
+		"Aggression_Threshold": 0,
+		"Attack_Skill": 0,
+		"Jumper": 0
+	},
+	{
+		"Name": "YJH_Normal",
+		"Aim_Skill": 0.5,
+		"Aim_Accuracy": 0.5,
+		"View_Max_Change": 270,
+		"ReactionTime": 1,
+		"Aggression": 1,
+		"Self_Preservation": 1,
+		"Fire_Throttle": 0.5,
+		"Aggression_Threshold": 0,
+		"Attack_Skill": 0,
+		"Jumper": 0
+	},
+	{
+		"Name": "YJH_Hard",
+		"Aim_Skill": 0.5,
+		"Aim_Accuracy": 0.5,
+		"View_Max_Change": 330,
+		"ReactionTime": 1,
+		"Aggression": 1,
+		"Self_Preservation": 1,
+		"Fire_Throttle": 0.5,
+		"Aggression_Threshold": 0,
+		"Attack_Skill": 0,
+		"Jumper": 0
+	}
+]

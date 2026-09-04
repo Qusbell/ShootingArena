@@ -1,0 +1,56 @@
+[
+	{
+		"Name": "27세변건호의인생최후의끌어치기",
+		"Character_ID": "27세변건호의인생최후의끌어치기",
+		"Characteristic_ID": [
+			"Dummy_Easy",
+			"Dummy_Normal",
+			"Dummy_Hard"
+		]
+	},
+	{
+		"Name": "26세한빛찬의풍차돌리기",
+		"Character_ID": "26세한빛찬의풍차돌리기",
+		"Characteristic_ID": [
+			"Dummy_Easy",
+			"Dummy_Normal",
+			"Dummy_Hard"
+		]
+	},
+	{
+		"Name": "24세이준혁의인생최후의알리오올리오",
+		"Character_ID": "24세이준혁의인생최후의알리오올리오",
+		"Characteristic_ID": [
+			"Dummy_Easy",
+			"Dummy_Normal",
+			"Dummy_Hard"
+		]
+	},
+	{
+		"Name": "26세박장한의국밥속틀니압수",
+		"Character_ID": "26세박장한의국밥속틀니압수",
+		"Characteristic_ID": [
+			"Dummy_Easy",
+			"Dummy_Normal",
+			"Dummy_Hard"
+		]
+	},
+	{
+		"Name": "24세양지성의인생최후의주식풀매수",
+		"Character_ID": "24세양지성의인생최후의주식풀매수",
+		"Characteristic_ID": [
+			"Dummy_Easy",
+			"Dummy_Normal",
+			"Dummy_Hard"
+		]
+	},
+	{
+		"Name": "24세윤장혁의인생최후의팀프로젝트",
+		"Character_ID": "24세윤장혁의인생최후의팀프로젝트",
+		"Characteristic_ID": [
+			"Dummy_Easy",
+			"Dummy_Normal",
+			"Dummy_Hard"
+		]
+	}
+]
