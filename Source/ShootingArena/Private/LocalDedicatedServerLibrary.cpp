@@ -615,15 +615,20 @@ bool ULocalDedicatedServerLibrary::StartMatchServer(const FString& MapName, int3
     }
 
     // MapName에 "?Game=..." "?AIEasy=1" 같은 URL 옵션이 이미 이어붙어 있어도 그대로 통과시킵니다.
-    // (StartLocalDedicatedServer와 달리 원래부터 -game 없이 -server만으로 잘 동작했으므로 그대로 유지합니다.)
 #if WITH_EDITOR
     const FString ProjectFilePath =
         FPaths::ConvertRelativePathToFull(
             FPaths::GetProjectFilePath()
         );
 
+    // StartLocalDedicatedServer와 동일하게 -game -server 를 둘 다 붙입니다.
+    // UnrealEditor.exe 는 -server 만으로는 에디터 컨텍스트로 떠서 World->GetNetMode()가
+    // NM_DedicatedServer 가 아니게 되는 경우가 있고, 그러면 매치 GameMode의
+    // MarkLocalDedicatedServerReady() 가 계속 false 를 리턴 → Ready 플래그 파일이
+    // 영영 안 만들어짐 → 로비의 PollMatchServerReady 가 무한 루프 → MatchServerAddress 가
+    // 비어 있는 채로 남아 클라이언트가 매치 서버로 이동하지 못합니다.
     const FString Params = FString::Printf(
-        TEXT("\"%s\" %s -server -log -port=%d -LocalServerReadyFile=\"%s\""),
+        TEXT("\"%s\" %s -game -server -log -port=%d -LocalServerReadyFile=\"%s\""),
         *ProjectFilePath,
         *MapName,
         Port,
