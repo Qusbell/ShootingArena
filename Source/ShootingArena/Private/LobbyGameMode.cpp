@@ -2,6 +2,7 @@
 #include "LobbyGameState.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
+#include "Engine/World.h"
 
 ALobbyGameState* ALobbyGameMode::GetLobbyGameState() const
 {
@@ -21,6 +22,28 @@ void ALobbyGameMode::MarkMatchLaunched()
 	bMatchLaunchedSinceLobbyReset = true;
 
 	UE_LOG(LogTemp, Warning, TEXT("[LobbyDebug] MarkMatchLaunched: 다음 로비 복귀 시 AI 슬롯을 초기화합니다."));
+}
+
+void ALobbyGameMode::TravelToMatch(const FString& MatchTravelURL)
+{
+	UWorld* World = GetWorld();
+	if (!World || MatchTravelURL.IsEmpty())
+	{
+		return;
+	}
+
+	// 방장이 "시작"을 연타하거나, 이미 다른 경로로 트래블이 예약된 경우 중복 실행을 막습니다.
+	// ServerTravel 이 예약되면 World->NextURL 이 채워집니다.
+	if (!World->NextURL.IsEmpty() || World->IsInSeamlessTravel())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Lobby] TravelToMatch 무시: 이미 트래블이 예약되어 있습니다. (NextURL=%s)"), *World->NextURL);
+		return;
+	}
+
+	// bAbsolute=true: 로비를 열 때 붙었던 "?Game=BP_LobbyGameMode" 등 이전 URL 옵션을
+	// 이어받지 않고, MatchTravelURL 에 명시된 GameMode/옵션으로만 매치 맵을 엽니다.
+	UE_LOG(LogTemp, Warning, TEXT("[Lobby] TravelToMatch: %s"), *MatchTravelURL);
+	World->ServerTravel(MatchTravelURL, /*bAbsolute=*/true);
 }
 
 void ALobbyGameMode::PostLogin(APlayerController* NewPlayer)

@@ -1,5 +1,6 @@
 #include "MyPlayerController.h"
 #include "HAL/PlatformMisc.h"
+#include "Engine/World.h"
 
 void AMyPlayerController::PawnLeavingGame()
 {
@@ -47,10 +48,23 @@ void AMyPlayerController::SetGamePausedByGameMode(bool bShouldPause)
 // WBP_Lobby가 아예 생성되지 않고 화면이 검게 보이는 버그로 이어집니다.
 void AMyPlayerController::ServerReturnToLobby_Implementation()
 {
-	if (UWorld* World = GetWorld())
+	UWorld* World = GetWorld();
+	if (!World)
 	{
-		World->ServerTravel(TEXT("/Game/QuakeLike_1_0/GameFlow/Lobby/Lobby_Level"), true);
+		return;
 	}
+
+	// 여러 클라이언트가 결과창에서 동시에 "로비로"를 눌러도 ServerTravel 이 한 번만
+	// 실행되도록 가드합니다. ServerTravel 이 예약되면 World->NextURL 이 채워집니다.
+	if (!World->NextURL.IsEmpty() || World->IsInSeamlessTravel())
+	{
+		return;
+	}
+
+	// bAbsolute=true 필수 — 매치 시작 때 붙였던 "?Game=BP_MultiplayerAIGameMode" 같은
+	// 이전 레벨의 URL 옵션이 이어지면 Lobby_Level 이 엉뚱한 GameMode 로 열립니다.
+	// (Lobby_Level 의 World Settings > GameMode Override 가 BP_LobbyGameMode 여야 함)
+	World->ServerTravel(TEXT("/Game/QuakeLike_1_0/GameFlow/Lobby/Lobby_Level"), true);
 }
 
 // GetNetMode()는 블루프린트에 노출되어 있지 않아서 감싸둔 함수입니다.
