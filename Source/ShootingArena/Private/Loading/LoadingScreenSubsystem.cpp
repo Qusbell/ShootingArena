@@ -206,27 +206,52 @@ void ULoadingScreenSubsystem::RemoveLoadingScreen()
 	UGameViewportClient* ViewportClient = GetGameInstance() ? GetGameInstance()->GetGameViewportClient() : nullptr;
 	if (ViewportClient && LoadingOverlay.IsValid()) ViewportClient->RemoveViewportWidgetContent(LoadingOverlay.ToSharedRef());
 	bOverlayAddedToViewport = false;
-	if (InputLockedController.IsValid())
-	{
-		InputLockedController->SetIgnoreMoveInput(false);
-		InputLockedController->SetIgnoreLookInput(false);
-	}
-	InputLockedController.Reset();
+	ReleaseInputLock();
 }
 
+// SetIgnoreMoveInput/SetIgnoreLookInput 은 호출 횟수를 누적하는 카운터입니다.
+// (true 를 N번 넣으면 false 도 N번 넣어야 풀림) ApplyInputLock 은 PreLoadMap /
+// PostLoadMap / 매 Tick 에서 불리므로, 컨트롤러당 정확히 한 번만 잠그고
+// ReleaseInputLock 에서 한 번만 풀어야 합니다. 그렇지 않으면 로딩 화면이
+// 여러 프레임 유지될 때 카운터가 크게 쌓여서, 전환이 끝나도 이동·시점 입력이
+// 영구히 무시되는 상태로 남습니다.
 void ULoadingScreenSubsystem::ApplyInputLock()
 {
 	UWorld* World = GetGameInstance() ? GetGameInstance()->GetWorld() : nullptr;
 	APlayerController* PlayerController = World ? World->GetFirstPlayerController() : nullptr;
 	if (!IsValid(PlayerController)) return;
-	if (InputLockedController.IsValid() && InputLockedController.Get() != PlayerController)
+
+	if (bInputLocked && InputLockedController.Get() == PlayerController)
+	{
+		return;
+	}
+
+	// 이전(다른) 컨트롤러를 잠갔던 상태면 먼저 그쪽을 정확히 한 번 풀어줍니다.
+	if (bInputLocked && InputLockedController.IsValid())
 	{
 		InputLockedController->SetIgnoreMoveInput(false);
 		InputLockedController->SetIgnoreLookInput(false);
 	}
+
 	PlayerController->SetIgnoreMoveInput(true);
 	PlayerController->SetIgnoreLookInput(true);
 	InputLockedController = PlayerController;
+	bInputLocked = true;
+}
+
+void ULoadingScreenSubsystem::ReleaseInputLock()
+{
+	if (bInputLocked && InputLockedController.IsValid())
+	{
+		// 균형이 어긋난 경우(다른 시스템이 같은 카운터를 건드렸거나, 과거
+		// 버전에서 누적된 값)에도 전환 직후 플레이어가 반드시 움직일 수 있도록
+		// 카운터를 0으로 강제 초기화합니다. 이 서브시스템은 클라이언트 전용이고
+		// 맵 전환 시점에만 실행되므로 다른 정상적인 입력 잠금과 충돌하지 않습니다.
+		InputLockedController->ResetIgnoreMoveInput();
+		InputLockedController->ResetIgnoreLookInput();
+	}
+	InputLockedController.Reset();
+	bInputLocked = false;
 }
 
 FText ULoadingScreenSubsystem::GetStatusText() const
