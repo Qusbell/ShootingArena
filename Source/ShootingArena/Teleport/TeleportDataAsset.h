@@ -4,6 +4,8 @@
 #include "Engine/DataAsset.h"
 #include "TeleportDataAsset.generated.h"
 
+class USoundBase;
+
 /**
  * 단방향 텔레포트의 기획 수치만 보관하는 DataAsset입니다.
  * 실제 텔레포트 로직은 AOneWayTeleportActor가 담당합니다.
@@ -28,4 +30,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Teleport",
 		meta = (ClampMin = "0.0"))
 	float moveLockTime = 0.2f;
+
+	/** 포탈 이용자 본인에게만 재생할 사운드입니다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Teleport|Sound")
+	TObjectPtr<USoundBase> teleportSound;
+
+	/** 사운드 에셋 기본 볼륨에 곱할 값입니다. 0이면 무음, 1이면 원본 볼륨입니다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Teleport|Sound",
+		meta = (ClampMin = "0.0", UIMin = "0.0"))
+	float soundVolumeMultiplier = 1.0f;
 };

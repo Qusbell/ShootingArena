@@ -11,6 +11,7 @@
 #include "GameFramework/PlayerController.h"
 #include "Materials/MaterialInterface.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "Sound/SoundBase.h"
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -316,6 +317,15 @@ void AOneWayTeleportActor::TeleportCharacter(ACharacter* character)
 			Cast<APlayerController>(controller))
 		{
 			playerController->ClientSetRotation(exitRotation, false);
+
+			// PlayerController의 Client RPC이므로 포탈을 실제 이용한 플레이어의
+			// 클라이언트에서만 재생됩니다. 다른 플레이어와 서버에는 들리지 않습니다.
+			if (IsValid(teleportDA->teleportSound))
+			{
+				playerController->ClientPlaySound(
+					teleportDA->teleportSound,
+					teleportDA->soundVolumeMultiplier);
+			}
 		}
 	}
 
