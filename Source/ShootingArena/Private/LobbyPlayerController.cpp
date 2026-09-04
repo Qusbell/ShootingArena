@@ -187,16 +187,4 @@ void ALobbyPlayerController::Server_CleanupMatchServer_Implementation()
 	}
 
 	ULocalDedicatedServerLibrary::StopMatchServer();
-
-	// 매치 서버 프로세스를 내렸으므로 주소(포트)도 즉시 비웁니다.
-	// 안 그러면 아직 로비에 남아 있던 클라(또는 방장보다 먼저 돌아온 클라)가 replicated
-	// MatchServerAddress를 보고 방금 죽인 매치 서버로 open → 접속 실패 → 메인 메뉴로 튕깁니다.
-	if (ALobbyGameState* LobbyGameState = GetLobbyGameState())
-	{
-		if (!LobbyGameState->MatchServerAddress.IsEmpty())
-		{
-			LobbyGameState->MatchServerAddress.Empty();
-			LobbyGameState->OnLobbyStateChanged();
-		}
-	}
 }

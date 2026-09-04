@@ -33,17 +33,6 @@ void ALobbyGameMode::PostLogin(APlayerController* NewPlayer)
 		return;
 	}
 
-	// ★ 그 무엇보다 먼저: 이전 매치의 포트(MatchServerAddress)가 남아 있으면 즉시 비웁니다.
-	// 매치를 끝내고 "open"으로 로비에 재접속한 클라는 새 연결이라 GameState를 처음부터 다시 받는데,
-	// 이 값이 이전 매치 그대로 "7778" 등으로 남아 있으면 클라의 OnLobbyStateChanged가 그걸 보고
-	// 이미 죽은 매치 서버로 다시 open → 접속 실패 → 메인 메뉴로 튕깁니다.
-	// 슬롯 배정/OnLobbyStateChanged 등 그 어떤 것보다도 먼저 비워야 이 클라의 초기 리플리케이션에 안 실립니다.
-	if (!LobbyGameState->MatchServerAddress.IsEmpty())
-	{
-		LobbyGameState->MatchServerAddress.Empty();
-		LobbyGameState->ResetNonPlayerSlots(); // AI 슬롯 초기화 보조 경로 유지
-	}
-
 	// 매치가 한 번 나간 뒤 처음 (재)접속한 플레이어라면, 지난 세션에 방장이 세팅해둔
 	// AI 슬롯을 먼저 비웁니다. (로비 서버는 세션 내내 살아있어서 Slots 배열이 유지되므로,
 	// 여기서 안 비우면 다음 매치의 AI 수에 계속 누적됩니다.)
@@ -54,6 +43,18 @@ void ALobbyGameMode::PostLogin(APlayerController* NewPlayer)
 	}
 
 	LobbyGameState->AssignPlayerToOpenSlot(NewPlayer->PlayerState);
+
+	// 매치 서버 주소를 초기화합니다. 이전 매치가 끝나고 돌아온 플레이어가 "새로" 로비에 접속하면
+	// (같은 프로세스 안에서 계속 있던 게 아니라 open으로 재접속한 거라) GameState를 처음 받는 셈이라,
+	// MatchServerAddress 값이 이전 매치 그대로 "7778" 등으로 남아있으면 그 초기 리플리케이션만으로도
+	// OnRep_MatchServerAddress가 발동해서 방금 나온 매치 서버로 다시 끌려가버리는 버그가 있었습니다.
+	// 누군가 로비에 (재)접속하는 시점엔 이미 이전 매치는 완전히 끝난 뒤이므로 안전하게 비워줍니다.
+	if (!LobbyGameState->MatchServerAddress.IsEmpty())
+	{
+		LobbyGameState->MatchServerAddress.Empty();
+		// AI 슬롯 초기화의 보조 경로. (주 경로는 위의 bMatchLaunchedSinceLobbyReset)
+		LobbyGameState->ResetNonPlayerSlots();
+	}
 
 	// 아직 방장이 없다면 (=서버에 처음 들어온 플레이어라면) 방장으로 지정합니다.
 	if (LobbyGameState->HostPlayerState == nullptr)
