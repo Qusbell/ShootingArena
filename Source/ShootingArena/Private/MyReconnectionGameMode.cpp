@@ -1,7 +1,9 @@
 #include "MyReconnectionGameMode.h"
 #include "Kismet/GameplayStatics.h"
 #include "ShootingArenaGameInstance.h"
+#include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
+#include "Engine/World.h"
 
 FString AMyReconnectionGameMode::InitNewPlayer(APlayerController* NewPlayerController,
     const FUniqueNetIdRepl& UniqueId,
@@ -30,24 +32,38 @@ FString AMyReconnectionGameMode::InitNewPlayer(APlayerController* NewPlayerContr
 		if (APlayerState* NewPlayerState = NewPlayerController->PlayerState)
 		{
 			const FString NicknameOption = UGameplayStatics::ParseOption(Options, TEXT("Nickname"));
-
-			// [DEBUG] 임시 로그 - 문제 해결되면 제거 예정
-			UE_LOG(LogTemp, Warning, TEXT("[NicknameDebug] Options=\"%s\" ParsedNickname=\"%s\""), *Options, *NicknameOption);
-
 			if (!NicknameOption.IsEmpty())
 			{
 				NewPlayerState->SetPlayerName(NicknameOption);
 			}
-			else if (UShootingArenaGameInstance* SAGameInstance = Cast<UShootingArenaGameInstance>(GetWorld() ? GetWorld()->GetGameInstance() : nullptr))
-			{
-				const FString SavedNickname = SAGameInstance->GetSavedNickname(NewPlayerState->SavedNetworkAddress);
-				if (!SavedNickname.IsEmpty())
-				{
-					NewPlayerState->SetPlayerName(SavedNickname);
-				}
-			}
+			// 2번(GameInstance 조회)은 PostLogin 에서 처리합니다 — 이 시점엔 SavedNetworkAddress 를 못 구합니다.
 		}
 	}
 
 	return ErrorMessage;
+}
+
+void AMyReconnectionGameMode::PostLogin(APlayerController* NewPlayer)
+{
+	if (NewPlayer && NewPlayer->PlayerState)
+	{
+		// 이 시점엔 SetPlayer() 로 NetConnection 이 PC 에 붙어 있어 주소를 구할 수 있습니다.
+		// (":포트" 제거 — 재접속 시 클라이언트 포트가 바뀌므로 IP만 키로 씁니다.)
+		FString NetworkAddress = NewPlayer->GetPlayerNetworkAddress();
+		const int32 ColonPos = NetworkAddress.Find(TEXT(":"), ESearchCase::CaseSensitive);
+		const FString StrippedAddress = (ColonPos > 0) ? NetworkAddress.Left(ColonPos) : NetworkAddress;
+		NewPlayer->PlayerState->SavedNetworkAddress = StrippedAddress;
+
+		// 이전 레벨(로비)에서 Server_SetPlayerName 으로 저장해둔 닉네임이 있으면 적용합니다.
+		if (const UShootingArenaGameInstance* SAGameInstance = GetGameInstance<UShootingArenaGameInstance>())
+		{
+			const FString SavedNickname = SAGameInstance->GetSavedNickname(StrippedAddress);
+			if (!SavedNickname.IsEmpty())
+			{
+				NewPlayer->PlayerState->SetPlayerName(SavedNickname);
+			}
+		}
+	}
+
+	Super::PostLogin(NewPlayer);
 }

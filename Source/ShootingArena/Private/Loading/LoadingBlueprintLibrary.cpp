@@ -48,6 +48,18 @@ void ULoadingBlueprintLibrary::BeginLoadingAndReturnToMainMenu(const UObject* Wo
 	UWorld* World = GEngine ? GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::ReturnNull) : nullptr;
 	if (!World) return;
 
+	// 원격 서버(통일 매치 서버 등)에 붙어 있는 경우, disconnect 를 지연 없이 즉시 실행합니다.
+	// 안 그러면 다른 플레이어가 결과창의 "로비로"(서버 전체 ServerTravel)를 누를 때
+	// 이 클라이언트가 disconnect 되기 전에 함께 로비로 끌려갑니다.
+	if (World->GetNetMode() == NM_Client)
+	{
+		if (APlayerController* PlayerController = World->GetFirstPlayerController())
+		{
+			UGameplayStatics::SetGamePaused(World, false);
+			PlayerController->ConsoleCommand(TEXT("disconnect"));
+		}
+	}
+
 	BeginLoadingScreen(WorldContextObject, StatusText);
 	TWeakObjectPtr<UGameInstance> WeakGameInstance = World->GetGameInstance();
 	FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([WeakGameInstance](float)
@@ -71,6 +83,15 @@ void ULoadingBlueprintLibrary::BeginLoadingAndLeaveMatchToMainMenu(const UObject
 	UWorld* World = GEngine ? GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::ReturnNull) : nullptr;
 	if (!World) return;
 
+	// disconnect 를 지연 없이 "즉시" 실행합니다. 통일 서버 모델에서는 다른 플레이어가 결과창의
+	// "로비로"(서버 전체 ServerTravel)를 누르면, 이 클라이언트가 disconnect 되기 전에 함께
+	// 로비로 끌려가버립니다. 먼저 연결을 끊어야 "메인메뉴로"가 개별 동작으로 확정됩니다.
+	if (APlayerController* PlayerController = World->GetFirstPlayerController())
+	{
+		UGameplayStatics::SetGamePaused(World, false);
+		PlayerController->ConsoleCommand(TEXT("disconnect"));
+	}
+
 	BeginLoadingScreen(WorldContextObject, StatusText);
 	TWeakObjectPtr<UGameInstance> WeakGameInstance = World->GetGameInstance();
 	FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([WeakGameInstance](float)
@@ -82,10 +103,6 @@ void ULoadingBlueprintLibrary::BeginLoadingAndLeaveMatchToMainMenu(const UObject
 		if (CurrentWorld)
 		{
 			UGameplayStatics::SetGamePaused(CurrentWorld, false);
-			if (APlayerController* PlayerController = CurrentWorld->GetFirstPlayerController())
-			{
-				PlayerController->ConsoleCommand(TEXT("disconnect"));
-			}
 			UGameplayStatics::OpenLevel(CurrentWorld, FName(TEXT("MainMenu_Level")));
 		}
 		return false;

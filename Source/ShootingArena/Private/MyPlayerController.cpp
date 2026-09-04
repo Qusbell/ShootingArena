@@ -1,5 +1,8 @@
 #include "MyPlayerController.h"
 #include "HAL/PlatformMisc.h"
+#include "Engine/World.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 
 void AMyPlayerController::PawnLeavingGame()
 {
@@ -47,10 +50,23 @@ void AMyPlayerController::SetGamePausedByGameMode(bool bShouldPause)
 // WBP_Lobby가 아예 생성되지 않고 화면이 검게 보이는 버그로 이어집니다.
 void AMyPlayerController::ServerReturnToLobby_Implementation()
 {
-	if (UWorld* World = GetWorld())
+	UWorld* World = GetWorld();
+	if (!World)
 	{
-		World->ServerTravel(TEXT("/Game/QuakeLike_1_0/GameFlow/Lobby/Lobby_Level"), true);
+		return;
 	}
+
+	// 여러 클라이언트가 결과창에서 동시에 "로비로"를 눌러도 ServerTravel 이 한 번만
+	// 실행되도록 가드합니다. ServerTravel 이 예약되면 World->NextURL 이 채워집니다.
+	if (!World->NextURL.IsEmpty() || World->IsInSeamlessTravel())
+	{
+		return;
+	}
+
+	// bAbsolute=true 필수 — 매치 시작 때 붙였던 "?Game=BP_MultiplayerAIGameMode" 같은
+	// 이전 레벨의 URL 옵션이 이어지면 Lobby_Level 이 엉뚱한 GameMode 로 열립니다.
+	// (Lobby_Level 의 World Settings > GameMode Override 가 BP_LobbyGameMode 여야 함)
+	World->ServerTravel(TEXT("/Game/QuakeLike_1_0/GameFlow/Lobby/Lobby_Level"), true);
 }
 
 // GetNetMode()는 블루프린트에 노출되어 있지 않아서 감싸둔 함수입니다.
@@ -60,12 +76,22 @@ bool AMyPlayerController::IsStandaloneGame() const
 }
 
 // 결과창에서 매치 서버를 떠날 때 호출됩니다. 이 프로세스 자신을 정상 종료시킵니다.
-// 에디터에서 리슨 서버로 테스트할 때 실수로 에디터 프로세스 자체가 꺼지지 않도록,
-// 진짜 데디케이티드 서버 프로세스에서만 실제로 종료합니다.
+// 단, "일회용으로 스폰된 매치 서버 프로세스" 일 때만 종료합니다.
+// 학교 배포처럼 RunServer.bat 으로 상주시키는 통일 서버(-LocalServerReadyFile 인자 없음)나
+// 에디터 리슨 서버에서는 절대 종료하지 않습니다 (누가 "메인메뉴로"를 눌러도 서버가 살아있어야 함).
 void AMyPlayerController::ServerShutdownMatchServer_Implementation()
 {
 	if (!IsRunningDedicatedServer())
 	{
+		return;
+	}
+
+	// 스폰된 로컬/매치 서버는 항상 "-LocalServerReadyFile=..." 인자를 갖고 실행됩니다.
+	FString UnusedReadyFile;
+	const bool bIsSpawnedDisposableServer = FParse::Value(FCommandLine::Get(), TEXT("LocalServerReadyFile="), UnusedReadyFile);
+	if (!bIsSpawnedDisposableServer)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[MatchServer] ServerShutdownMatchServer 무시: 상주(통일) 서버는 종료하지 않습니다."));
 		return;
 	}
 

@@ -29,6 +29,7 @@ private:
 	void RemoveLoadingScreen();
 	void UpdateLoadingState();
 	void ApplyInputLock();
+	void ReleaseInputLock();
 	FText GetStatusText() const;
 
 	FDelegateHandle PreLoadMapHandle;
@@ -36,6 +37,7 @@ private:
 	FTSTicker::FDelegateHandle TickerHandle;
 	TSharedPtr<SWidget> LoadingOverlay;
 	TWeakObjectPtr<APlayerController> InputLockedController;
+	bool bInputLocked = false;
 	FString CurrentStatus;
 	float SecondsSincePostLoad = 0.0f;
 	bool bTransitionActive = false;

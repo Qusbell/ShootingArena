@@ -52,6 +52,15 @@ public:
 	// 그대로 남아 다음 매치의 AI 수에 누적되는 것을 막기 위해 호출합니다.
 	void ResetNonPlayerSlots();
 
+	// 현재 Slots 의 AI 슬롯 구성을 GameInstance(SavedLobbyAISlots)에 저장합니다. 서버 전용입니다.
+	// 방장이 AI 슬롯을 추가/수정/제거할 때마다 호출하면, 매치를 다녀온 뒤에도 그 구성이 유지됩니다.
+	void SaveAISlotsToGameInstance() const;
+
+	// GameInstance 에 저장된 AI 슬롯 구성을 현재 Slots 에 다시 적용합니다. 서버 전용입니다.
+	// SlotIndex 가 현재 슬롯 범위 안이고, 그 슬롯을 사람이 차지하고 있지 않을 때만 적용합니다.
+	// RebuildSlots 끝에서 호출되어, 로비 (재)구성 후 AI 슬롯이 복원됩니다.
+	void RestoreAISlotsFromGameInstance();
+
 	// PlayerState가 차지한 슬롯의 인덱스를 찾습니다. 없으면 INDEX_NONE.
 	UFUNCTION(BlueprintPure, Category = "Lobby")
 	int32 FindSlotIndexForPlayer(APlayerState* PlayerState) const;

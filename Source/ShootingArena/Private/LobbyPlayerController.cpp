@@ -46,6 +46,7 @@ void ALobbyPlayerController::Server_SetSlotType_Implementation(int32 SlotIndex, 
 		Slot.DisplayName.Empty();
 	}
 
+	LobbyGameState->SaveAISlotsToGameInstance();
 	LobbyGameState->OnLobbyStateChanged();
 }
 
@@ -76,6 +77,7 @@ void ALobbyPlayerController::Server_SetAIConfig_Implementation(int32 SlotIndex, 
 	Slot.Difficulty = Difficulty;
 	Slot.bReady = true; // 기획서: AI는 이름과 난이도 설정 시 자동으로 준비 완료
 
+	LobbyGameState->SaveAISlotsToGameInstance();
 	LobbyGameState->OnLobbyStateChanged();
 }
 

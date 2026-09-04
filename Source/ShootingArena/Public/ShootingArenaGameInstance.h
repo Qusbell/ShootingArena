@@ -31,6 +31,19 @@ public:
 	UPROPERTY(BlueprintReadWrite, Category = "Lobby")
 	TArray<ELobbyDifficulty> PendingAIDifficulties;
 
+	// 매치를 다녀와도(로비 서버가 매치 맵으로 ServerTravel 후 다시 Lobby_Level 로 복귀)
+	// 방장이 설정해둔 AI 슬롯이 그대로 남아있도록 여기에 보관합니다.
+	// ALobbyGameState 가 AI 슬롯 변경 시 SaveAISlotsToGameInstance 로 갱신하고,
+	// 로비가 (재)구성될 때 RestoreAISlotsFromGameInstance 로 다시 적용합니다. 서버 전용입니다.
+	UPROPERTY()
+	TArray<FLobbySavedAISlot> SavedLobbyAISlots;
+
+	// 방장(호스트)의 네트워크 주소(포트 없는 IP). 매치를 다녀와 로비가 새로 구성될 때
+	// 이 값과 일치하는 플레이어를 다시 방장으로 지정해, 재접속 순서와 상관없이 방장이 유지됩니다.
+	// ALobbyGameMode 가 관리합니다. 서버 전용입니다.
+	UPROPERTY()
+	FString SavedHostNetworkAddress;
+
 private:
 	UPROPERTY()
 	TMap<FString, FString> NicknameByNetworkAddress;
