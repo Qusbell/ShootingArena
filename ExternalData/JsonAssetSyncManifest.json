@@ -4,35 +4,203 @@
 	"registry": "/Game/JsonAssetSync/DA_JsonApplyRegistry.DA_JsonApplyRegistry",
 	"dataTables": [
 		{
-			"id": "/Game/QuakeLike_1_0/Data/JsonParser/DT_JsonParserTest.DT_JsonParserTest",
-			"displayName": "DT_JsonParserTest",
+			"id": "/Game/QuakeLike_1_0/GameFlow/Table/DT/DT_Character.DT_Character",
+			"displayName": "DT_Character",
 			"assetType": "DataTable",
-			"source": "Content/DataTables/JsonParserTest.json",
-			"target": "/Game/QuakeLike_1_0/Data/JsonParser/DT_JsonParserTest.DT_JsonParserTest",
-			"rowStruct": "/Game/QuakeLike_1_0/JsonParser/ST_JsonParserTestRow.ST_JsonParserTestRow",
+			"source": "Content/DataTables/DT_Character.json",
+			"target": "/Game/QuakeLike_1_0/GameFlow/Table/DT/DT_Character.DT_Character",
+			"rowStruct": "/Game/QuakeLike_1_0/GameFlow/Table/ST/ST_Character.ST_Character",
 			"properties": [
 				{
-					"name": "displayName",
-					"displayName": "displayName",
-					"cppType": "FString",
+					"name": "character_Id",
+					"displayName": "Character_ID",
+					"cppType": "FName",
 					"order": 0,
 					"advancedDisplay": false,
-					"type": "string"
+					"type": "name"
 				},
 				{
-					"name": "count",
-					"displayName": "count",
-					"cppType": "int32",
+					"name": "characteristic_Id",
+					"displayName": "Characteristic_ID",
+					"cppType": "TArray",
 					"order": 1,
 					"advancedDisplay": false,
+					"type": "array",
+					"element":
+					{
+						"name": "characteristic_Id",
+						"displayName": "Characteristic ID",
+						"cppType": "FName",
+						"order": 0,
+						"advancedDisplay": false,
+						"type": "name"
+					}
+				}
+			]
+		},
+		{
+			"id": "/Game/QuakeLike_1_0/Data/AI/DT_Characteristic.DT_Characteristic",
+			"displayName": "DT_Characteristic",
+			"assetType": "DataTable",
+			"source": "Content/DataTables/DT_Characteristic.json",
+			"target": "/Game/QuakeLike_1_0/Data/AI/DT_Characteristic.DT_Characteristic",
+			"rowStruct": "/Game/QuakeLike_1_0/AI/LSH_AI_Table/02_AI_Struct/ST_Characteristic.ST_Characteristic",
+			"properties": [
+				{
+					"name": "aim_Skill",
+					"displayName": "Aim_Skill",
+					"cppType": "double",
+					"order": 0,
+					"tooltip": "봇이 적의 움직임을 얼마나 잘 예측하고 조준하는지 결정",
+					"advancedDisplay": false,
+					"constraints":
+					{
+						"clampMin": "0.00",
+						"clampMax": "1.00",
+						"uiMin": "0.00",
+						"uiMax": "1.00"
+					},
+					"type": "double"
+				},
+				{
+					"name": "aim_Accuracy",
+					"displayName": "Aim_Accuracy",
+					"cppType": "double",
+					"order": 1,
+					"tooltip": "봇의 사격 실력을 결정하는 정확도",
+					"advancedDisplay": false,
+					"constraints":
+					{
+						"clampMin": "0.00",
+						"clampMax": "1.00",
+						"uiMin": "0.00",
+						"uiMax": "1.00"
+					},
+					"type": "double"
+				},
+				{
+					"name": "view_Max_Change",
+					"displayName": "View_Max_Change",
+					"cppType": "int32",
+					"order": 2,
+					"tooltip": "1초당 봇이 각도를 얼마나 회전할 수 있는지 결정하는 각속도 한계치",
+					"advancedDisplay": false,
+					"constraints":
+					{
+						"clampMin": "0",
+						"clampMax": "360",
+						"uiMin": "0",
+						"uiMax": "360"
+					},
 					"type": "int32"
 				},
 				{
-					"name": "value",
-					"displayName": "value",
+					"name": "reactionTime",
+					"displayName": "ReactionTime",
 					"cppType": "double",
-					"order": 2,
+					"order": 3,
+					"tooltip": "봇의 반응 속도",
 					"advancedDisplay": false,
+					"constraints":
+					{
+						"clampMin": "0.00",
+						"clampMax": "5.00",
+						"uiMin": "0.00",
+						"uiMax": "5.00"
+					},
+					"type": "double"
+				},
+				{
+					"name": "aggression",
+					"displayName": "Aggression",
+					"cppType": "double",
+					"order": 4,
+					"tooltip": "봇이 전투와 관련된 목표에 보정을 주는 값",
+					"advancedDisplay": false,
+					"constraints":
+					{
+						"clampMin": "0.00",
+						"clampMax": "1.00",
+						"uiMin": "0.00",
+						"uiMax": "1.00"
+					},
+					"type": "double"
+				},
+				{
+					"name": "self_Preservation",
+					"displayName": "Self_Preservation",
+					"cppType": "double",
+					"order": 5,
+					"tooltip": "봇이 생존과 관련된 목표에 보정을 주는 값",
+					"advancedDisplay": false,
+					"constraints":
+					{
+						"clampMin": "0.00",
+						"clampMax": "1.00",
+						"uiMin": "0.00",
+						"uiMax": "1.00"
+					},
+					"type": "double"
+				},
+				{
+					"name": "fire_Throttle",
+					"displayName": "Fire_Throttle",
+					"cppType": "double",
+					"order": 6,
+					"tooltip": "봇의 사격 딜레이 수치",
+					"advancedDisplay": false,
+					"constraints":
+					{
+						"clampMin": "0.00",
+						"clampMax": "1.00",
+						"uiMin": "0.00",
+						"uiMax": "1.00"
+					},
+					"type": "double"
+				},
+				{
+					"name": "aggression_Threshold",
+					"displayName": "Aggression_Threshold",
+					"cppType": "double",
+					"order": 7,
+					"advancedDisplay": false,
+					"constraints":
+					{
+						"clampMin": "0",
+						"clampMax": "1",
+						"uiMin": "0",
+						"uiMax": "1"
+					},
+					"type": "double"
+				},
+				{
+					"name": "attack_Skill",
+					"displayName": "Attack_Skill",
+					"cppType": "double",
+					"order": 8,
+					"advancedDisplay": false,
+					"constraints":
+					{
+						"clampMin": "0",
+						"clampMax": "1",
+						"uiMin": "0",
+						"uiMax": "1"
+					},
+					"type": "double"
+				},
+				{
+					"name": "jumper",
+					"displayName": "Jumper",
+					"cppType": "double",
+					"order": 9,
+					"advancedDisplay": false,
+					"constraints":
+					{
+						"clampMin": "0.0",
+						"clampMax": "1.0",
+						"uiMin": "0.0",
+						"uiMax": "1.0"
+					},
 					"type": "double"
 				}
 			]
