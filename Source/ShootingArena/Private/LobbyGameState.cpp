@@ -1,6 +1,8 @@
 #include "LobbyGameState.h"
+#include "ShootingArenaGameInstance.h"
 #include "Net/UnrealNetwork.h"
 #include "GameFramework/PlayerState.h"
+#include "Engine/World.h"
 
 ALobbyGameState::ALobbyGameState()
 {
@@ -79,6 +81,10 @@ void ALobbyGameState::RebuildSlots(const FString& NewMapID, int32 NewMaxPlayerCo
 		UE_LOG(LogTemp, Warning, TEXT("[LobbyDebug]   -> Slot[%d] Type=%d OwningPlayerState=%s DisplayName=%s"),
 			Slot.SlotIndex, (int32)Slot.SlotType, Slot.OwningPlayerState ? *Slot.OwningPlayerState->GetPlayerName() : TEXT("None"), *Slot.DisplayName);
 	}
+
+	// 매치를 다녀온 뒤(또는 로비에서 맵을 바꾼 뒤)에도 방장이 설정해둔 AI 슬롯이 유지되도록,
+	// GameInstance 에 저장해둔 AI 슬롯 구성을 새로 만든 Slots 위에 다시 적용합니다.
+	RestoreAISlotsFromGameInstance();
 
 	OnLobbyStateChanged();
 }
@@ -180,9 +186,86 @@ void ALobbyGameState::ResetNonPlayerSlots()
 		bChanged = true;
 	}
 
+	// AI 슬롯을 실제로 비웠으므로, 유지용 저장본도 비워서 다음 RebuildSlots 때 되살아나지 않게 합니다.
+	SaveAISlotsToGameInstance();
+
 	if (bChanged)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[LobbyDebug] ResetNonPlayerSlots: AI/Locked 슬롯을 Open으로 초기화했습니다."));
+		OnLobbyStateChanged();
+	}
+}
+
+void ALobbyGameState::SaveAISlotsToGameInstance() const
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	UShootingArenaGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance<UShootingArenaGameInstance>() : nullptr;
+	if (!GameInstance)
+	{
+		return;
+	}
+
+	GameInstance->SavedLobbyAISlots.Reset();
+	for (const FLobbySlot& Slot : Slots)
+	{
+		if (Slot.SlotType != ELobbySlotType::AI)
+		{
+			continue;
+		}
+
+		FLobbySavedAISlot Saved;
+		Saved.SlotIndex = Slot.SlotIndex;
+		Saved.AIName = Slot.DisplayName;
+		Saved.Difficulty = Slot.Difficulty;
+		GameInstance->SavedLobbyAISlots.Add(Saved);
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("[LobbyDebug] SaveAISlotsToGameInstance: %d개 AI 슬롯 저장."), GameInstance->SavedLobbyAISlots.Num());
+}
+
+void ALobbyGameState::RestoreAISlotsFromGameInstance()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	const UShootingArenaGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance<UShootingArenaGameInstance>() : nullptr;
+	if (!GameInstance || GameInstance->SavedLobbyAISlots.Num() == 0)
+	{
+		return;
+	}
+
+	bool bChanged = false;
+	for (const FLobbySavedAISlot& Saved : GameInstance->SavedLobbyAISlots)
+	{
+		if (!Slots.IsValidIndex(Saved.SlotIndex))
+		{
+			continue;
+		}
+
+		FLobbySlot& Slot = Slots[Saved.SlotIndex];
+		if (Slot.SlotType == ELobbySlotType::Player)
+		{
+			// 사람이 이미 차지한 슬롯은 덮어쓰지 않습니다.
+			continue;
+		}
+
+		Slot.SlotType = ELobbySlotType::AI;
+		Slot.OwningPlayerState = nullptr;
+		Slot.DisplayName = Saved.AIName;
+		Slot.Difficulty = Saved.Difficulty;
+		Slot.bReady = true; // 기획서: AI 슬롯은 자동 준비 완료
+		bChanged = true;
+	}
+
+	if (bChanged)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[LobbyDebug] RestoreAISlotsFromGameInstance: AI 슬롯 복원 완료."));
 		OnLobbyStateChanged();
 	}
 }

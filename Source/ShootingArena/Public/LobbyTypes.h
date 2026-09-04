@@ -24,6 +24,23 @@ enum class ELobbyDifficulty : uint8
 	Hard	UMETA(DisplayName = "Hard")
 };
 
+// 매치를 다녀온 뒤에도 로비 AI 슬롯을 유지하기 위해 GameInstance 에 저장하는 최소 정보입니다.
+// (FLobbySlot 은 APlayerState 포인터를 들고 있어 레벨 이동을 넘겨 저장하기에 부적합하므로 별도 구조체입니다.)
+USTRUCT()
+struct FLobbySavedAISlot
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	int32 SlotIndex = INDEX_NONE;
+
+	UPROPERTY()
+	FString AIName;
+
+	UPROPERTY()
+	ELobbyDifficulty Difficulty = ELobbyDifficulty::Normal;
+};
+
 // 대기 로비 슬롯 하나의 정보입니다. ALobbyGameState::Slots 배열의 원소로 복제됩니다.
 USTRUCT(BlueprintType)
 struct FLobbySlot
