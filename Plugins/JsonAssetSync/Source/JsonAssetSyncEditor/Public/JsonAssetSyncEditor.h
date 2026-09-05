@@ -9,6 +9,7 @@
 
 class UJsonAssetSyncSubsystem;
 struct FJsonAssetSyncPackagingPreflightReport;
+class FObjectPreSaveContext;
 
 /**
  * JSON Asset Sync의 에디터 전용 기능을 담당하는 모듈이다.
@@ -81,6 +82,15 @@ private:
 	 * @return 한 번 실행 후 해제하므로 false를 반환한다.
 	 */
 	bool HandleDeferredManifestRefresh(float deltaTime);
+
+	/**
+	 * 에디터에서 에셋이 디스크에 기록되기 직전에 호출된다.
+	 * Registry에 등록된 대상이면 현재 값을 연결된 JSON에도 기록한다.
+	 */
+	void HandleObjectPreSave(
+		UObject* savedObject,
+		FObjectPreSaveContext saveContext
+	);
 
 	/**
 	 * JSON Asset Sync 전용 Message Log 목록을 등록한다.
@@ -221,6 +231,9 @@ private:
 	 * Registry Property 변경 감시 Delegate Handle이다.
 	 */
 	FDelegateHandle registryPropertyChangedHandle;
+
+	/** 대상 에셋 저장 직전 감시 Delegate Handle이다. */
+	FDelegateHandle objectPreSaveHandle;
 
 	/**
 	 * Registry 변경 후 다음 Tick에 Manifest/JSON 갱신을 실행하는 Ticker Handle이다.

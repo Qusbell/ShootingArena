@@ -28,6 +28,22 @@ struct FJsonAssetSyncManifestExportResult
 	TArray<FString> errors;
 };
 
+/** 에디터에서 저장한 대상 에셋의 JSON 반영 결과다. */
+struct FJsonAssetSyncAssetExportResult
+{
+	/** 저장된 에셋이 Registry의 JSON 동기화 대상이었는지 나타낸다. */
+	bool wasHandled = false;
+
+	/** 대상 Binding의 JSON 기록이 모두 성공했는지 나타낸다. */
+	bool success = true;
+
+	/** 실제로 갱신한 JSON 파일 개수다. */
+	int32 updatedJsonFileCount = 0;
+
+	/** 내보내기 과정에서 발생한 오류 메시지다. */
+	TArray<FString> errors;
+};
+
 /**
  * Registry에 등록된 DataTable/DataAsset의 실제 Unreal Reflection 정보를 읽어
  * 외부 데이터 편집기가 사용할 JsonAssetSyncManifest.json을 생성한다.
@@ -44,5 +60,13 @@ public:
 	 */
 	static FJsonAssetSyncManifestExportResult ExportManifest(
 		bool forceRewrite = false
+	);
+
+	/**
+	 * Registry에 등록된 대상 에셋이 Unreal Editor에서 저장됐을 때,
+	 * 그 에셋의 현재 값을 연결된 외부 JSON 파일에 기록한다.
+	 */
+	static FJsonAssetSyncAssetExportResult ExportSavedAssetJson(
+		UObject* savedAsset
 	);
 };
