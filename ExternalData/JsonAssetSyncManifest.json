@@ -12,18 +12,27 @@
 			"rowStruct": "/Game/QuakeLike_1_0/GameFlow/Table/ST/ST_Character.ST_Character",
 			"properties": [
 				{
-					"name": "character_Id",
-					"displayName": "Character_ID",
+					"name": "character_Name",
+					"displayName": "Character_Name",
 					"cppType": "FName",
 					"order": 0,
 					"advancedDisplay": false,
 					"type": "name"
 				},
 				{
+					"name": "character_Sprite",
+					"displayName": "Character_Sprite",
+					"cppType": "UTexture2D*",
+					"order": 1,
+					"advancedDisplay": false,
+					"type": "object",
+					"objectClass": "/Script/Engine.Texture2D"
+				},
+				{
 					"name": "characteristic_Id",
 					"displayName": "Characteristic_ID",
 					"cppType": "TArray",
-					"order": 1,
+					"order": 2,
 					"advancedDisplay": false,
 					"type": "array",
 					"element":

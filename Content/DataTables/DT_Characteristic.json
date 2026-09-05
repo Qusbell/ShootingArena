@@ -1,42 +1,16 @@
 [
 	{
-		"Name": "Dummy_Easy",
-		"Aim_Skill": 0.20000000000000001,
-		"Aim_Accuracy": 0.20000000000000001,
-		"View_Max_Change": 250,
-		"ReactionTime": 2.5,
-		"Aggression": 0.5,
-		"Self_Preservation": 0.5,
-		"Fire_Throttle": 0.90000000000000002,
-		"Aggression_Threshold": 0.5,
-		"Attack_Skill": 0,
-		"Jumper": 0.5
-	},
-	{
-		"Name": "Dummy_Normal",
-		"Aim_Skill": 0.5,
-		"Aim_Accuracy": 0.5,
+		"Name": "Dummy",
+		"Aim_Skill": 0.01,
+		"Aim_Accuracy": 0.01,
 		"View_Max_Change": 270,
-		"ReactionTime": 1,
-		"Aggression": 0.5,
-		"Self_Preservation": 0.5,
-		"Fire_Throttle": 0.5,
-		"Aggression_Threshold": 0.5,
-		"Attack_Skill": 0.29999999999999999,
-		"Jumper": 0.5
-	},
-	{
-		"Name": "Dummy_Hard",
-		"Aim_Skill": 0.90000000000000002,
-		"Aim_Accuracy": 1,
-		"View_Max_Change": 330,
-		"ReactionTime": 1,
-		"Aggression": 0.5,
-		"Self_Preservation": 0.5,
-		"Fire_Throttle": 0.20000000000000001,
-		"Aggression_Threshold": 0.5,
-		"Attack_Skill": 0.5,
-		"Jumper": 0.5
+		"ReactionTime": 0.5,
+		"Aggression": 0.20000000000000001,
+		"Self_Preservation": 0.80000000000000004,
+		"Fire_Throttle": 0.10000000000000001,
+		"Aggression_Threshold": 0.90000000000000002,
+		"Attack_Skill": 0.40000000000000002,
+		"Jumper": 0.94999999999999996
 	},
 	{
 		"Name": "BGH_Easy",
@@ -47,7 +21,7 @@
 		"Aggression": 0.69999999999999996,
 		"Self_Preservation": 0.29999999999999999,
 		"Fire_Throttle": 0.29999999999999999,
-		"Aggression_Threshold": 0.69999999999999996,
+		"Aggression_Threshold": 0.29999999999999999,
 		"Attack_Skill": 0.29999999999999999,
 		"Jumper": 0.29999999999999999
 	},
@@ -60,7 +34,7 @@
 		"Aggression": 0.69999999999999996,
 		"Self_Preservation": 0.29999999999999999,
 		"Fire_Throttle": 0.5,
-		"Aggression_Threshold": 0.69999999999999996,
+		"Aggression_Threshold": 0.29999999999999999,
 		"Attack_Skill": 0.29999999999999999,
 		"Jumper": 0.29999999999999999
 	},
@@ -73,7 +47,7 @@
 		"Aggression": 0.69999999999999996,
 		"Self_Preservation": 0.29999999999999999,
 		"Fire_Throttle": 0.59999999999999998,
-		"Aggression_Threshold": 0.69999999999999996,
+		"Aggression_Threshold": 0.29999999999999999,
 		"Attack_Skill": 0.29999999999999999,
 		"Jumper": 0.29999999999999999
 	},
@@ -85,8 +59,8 @@
 		"ReactionTime": 1.2,
 		"Aggression": 0.29999999999999999,
 		"Self_Preservation": 0.69999999999999996,
-		"Fire_Throttle": 0.40000000000000002,
-		"Aggression_Threshold": 0.40000000000000002,
+		"Fire_Throttle": 0.75,
+		"Aggression_Threshold": 0.69999999999999996,
 		"Attack_Skill": 0.29999999999999999,
 		"Jumper": 0.40000000000000002
 	},
@@ -98,8 +72,8 @@
 		"ReactionTime": 1,
 		"Aggression": 0.29999999999999999,
 		"Self_Preservation": 0.69999999999999996,
-		"Fire_Throttle": 0.5,
-		"Aggression_Threshold": 0.40000000000000002,
+		"Fire_Throttle": 0.65000000000000002,
+		"Aggression_Threshold": 0.59999999999999998,
 		"Attack_Skill": 0.29999999999999999,
 		"Jumper": 0.40000000000000002
 	},
@@ -111,8 +85,8 @@
 		"ReactionTime": 0.80000000000000004,
 		"Aggression": 0.29999999999999999,
 		"Self_Preservation": 0.69999999999999996,
-		"Fire_Throttle": 0.59999999999999998,
-		"Aggression_Threshold": 0.40000000000000002,
+		"Fire_Throttle": 0.55000000000000004,
+		"Aggression_Threshold": 0.59999999999999998,
 		"Attack_Skill": 0.29999999999999999,
 		"Jumper": 0.40000000000000002
 	},
@@ -125,7 +99,7 @@
 		"Aggression": 0.40000000000000002,
 		"Self_Preservation": 0.59999999999999998,
 		"Fire_Throttle": 0.10000000000000001,
-		"Aggression_Threshold": 0.40000000000000002,
+		"Aggression_Threshold": 0.59999999999999998,
 		"Attack_Skill": 0.20000000000000001,
 		"Jumper": 0.10000000000000001
 	},
@@ -138,7 +112,7 @@
 		"Aggression": 0.40000000000000002,
 		"Self_Preservation": 0.59999999999999998,
 		"Fire_Throttle": 0.20000000000000001,
-		"Aggression_Threshold": 0.40000000000000002,
+		"Aggression_Threshold": 0.59999999999999998,
 		"Attack_Skill": 0.40000000000000002,
 		"Jumper": 0.10000000000000001
 	},
@@ -151,7 +125,7 @@
 		"Aggression": 0.40000000000000002,
 		"Self_Preservation": 0.59999999999999998,
 		"Fire_Throttle": 0.45000000000000001,
-		"Aggression_Threshold": 0.40000000000000002,
+		"Aggression_Threshold": 0.59999999999999998,
 		"Attack_Skill": 0.59999999999999998,
 		"Jumper": 0.10000000000000001
 	},
@@ -163,7 +137,7 @@
 		"ReactionTime": 0.80000000000000004,
 		"Aggression": 0.90000000000000002,
 		"Self_Preservation": 0.10000000000000001,
-		"Fire_Throttle": 0.65000000000000002,
+		"Fire_Throttle": 0.29999999999999999,
 		"Aggression_Threshold": 0.10000000000000001,
 		"Attack_Skill": 0.01,
 		"Jumper": 0.050000000000000003
@@ -176,7 +150,7 @@
 		"ReactionTime": 0.59999999999999998,
 		"Aggression": 0.90000000000000002,
 		"Self_Preservation": 0.10000000000000001,
-		"Fire_Throttle": 0.80000000000000004,
+		"Fire_Throttle": 0.65000000000000002,
 		"Aggression_Threshold": 0.20000000000000001,
 		"Attack_Skill": 0.10000000000000001,
 		"Jumper": 0.050000000000000003
@@ -191,7 +165,7 @@
 		"Self_Preservation": 0.10000000000000001,
 		"Fire_Throttle": 0.90000000000000002,
 		"Aggression_Threshold": 0.29999999999999999,
-		"Attack_Skill": 0.20000000000000001,
+		"Attack_Skill": 0.10000000000000001,
 		"Jumper": 0.050000000000000003
 	},
 	{
@@ -242,7 +216,7 @@
 		"Aggression": 0.20000000000000001,
 		"Self_Preservation": 0.80000000000000004,
 		"Fire_Throttle": 0.10000000000000001,
-		"Aggression_Threshold": 0.10000000000000001,
+		"Aggression_Threshold": 0.90000000000000002,
 		"Attack_Skill": 0.40000000000000002,
 		"Jumper": 0.94999999999999996
 	},
@@ -255,7 +229,7 @@
 		"Aggression": 0.20000000000000001,
 		"Self_Preservation": 0.80000000000000004,
 		"Fire_Throttle": 0.10000000000000001,
-		"Aggression_Threshold": 0.10000000000000001,
+		"Aggression_Threshold": 0.90000000000000002,
 		"Attack_Skill": 0.5,
 		"Jumper": 0.94999999999999996
 	},
@@ -268,7 +242,7 @@
 		"Aggression": 0.29999999999999999,
 		"Self_Preservation": 0.69999999999999996,
 		"Fire_Throttle": 0.10000000000000001,
-		"Aggression_Threshold": 0.20000000000000001,
+		"Aggression_Threshold": 0.80000000000000004,
 		"Attack_Skill": 0.59999999999999998,
 		"Jumper": 0.94999999999999996
 	}
