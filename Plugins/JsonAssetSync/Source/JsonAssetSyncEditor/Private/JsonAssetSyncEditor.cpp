@@ -21,6 +21,7 @@
 #include "ToolMenus.h"
 #include "Widgets/Notifications/SNotificationList.h"
 #include "UObject/UObjectGlobals.h" // FCoreUObjectDelegates::OnObjectPropertyChanged
+#include "UObject/ObjectSaveContext.h"
 #include "UObject/UnrealType.h"
 
 #define LOCTEXT_NAMESPACE "JsonAssetSyncEditor"
@@ -283,6 +284,17 @@ void FJsonAssetSyncEditorModule::StartupModule()
 		);
 
 	/*
+	 * JSON은 배포 프로그램과 에디터가 공유하는 원본 데이터다.
+	 * 따라서 Registry에 등록된 에셋을 에디터에서 저장하면
+	 * 같은 저장 작업 중 JSON도 현재 값으로 갱신한다.
+	 */
+	objectPreSaveHandle =
+		FCoreUObjectDelegates::OnObjectPreSave.AddRaw(
+			this,
+			&FJsonAssetSyncEditorModule::HandleObjectPreSave
+		);
+
+	/*
 	 * ToolMenus가 메뉴 등록 가능한 상태가 될 때까지 기다렸다가
 	 * Tools 메뉴에 Apply JSON 항목 하나를 추가한다.
 	 */
@@ -325,6 +337,14 @@ void FJsonAssetSyncEditorModule::ShutdownModule()
 			registryPropertyChangedHandle
 		);
 		registryPropertyChangedHandle.Reset();
+	}
+
+	if (objectPreSaveHandle.IsValid())
+	{
+		FCoreUObjectDelegates::OnObjectPreSave.Remove(
+			objectPreSaveHandle
+		);
+		objectPreSaveHandle.Reset();
 	}
 
 	if (editorInitializedHandle.IsValid())
@@ -415,6 +435,43 @@ void FJsonAssetSyncEditorModule::HandleRegistryPropertyChanged(
 	}
 
 	ScheduleDeferredManifestRefresh();
+}
+
+void FJsonAssetSyncEditorModule::HandleObjectPreSave(
+	UObject* savedObject,
+	FObjectPreSaveContext saveContext
+)
+{
+	using namespace JsonAssetSyncEditor::Private;
+	static_cast<void>(saveContext);
+
+	if (!IsValid(savedObject))
+	{
+		return;
+	}
+
+	const FJsonAssetSyncAssetExportResult exportResult =
+		FJsonAssetSyncSchemaExporter::ExportSavedAssetJson(savedObject);
+
+	if (!exportResult.wasHandled || exportResult.success)
+	{
+		return;
+	}
+
+	FMessageLog messageLog(messageLogName);
+	messageLog.Error(
+		FText::FromString(
+			FString::Printf(
+				TEXT("[JSON Export] 저장된 에셋의 JSON 반영에 실패했습니다: %s"),
+				*savedObject->GetPathName()
+			)
+		)
+	);
+
+	for (const FString& error : exportResult.errors)
+	{
+		messageLog.Error(FText::FromString(error));
+	}
 }
 
 void FJsonAssetSyncEditorModule::

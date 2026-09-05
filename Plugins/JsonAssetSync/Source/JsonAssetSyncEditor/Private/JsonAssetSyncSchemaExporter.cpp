@@ -1656,3 +1656,123 @@ FJsonAssetSyncSchemaExporter::ExportManifest(const bool forceRewrite)
 	result.changed = true;
 	return result;
 }
+
+FJsonAssetSyncAssetExportResult
+FJsonAssetSyncSchemaExporter::ExportSavedAssetJson(UObject* savedAsset)
+{
+	using namespace JsonAssetSyncSchemaExporter::Private;
+
+	FJsonAssetSyncAssetExportResult result;
+
+	if (!IsValid(savedAsset))
+	{
+		return result;
+	}
+
+	const UJsonAssetSyncSettings* settings = GetDefault<UJsonAssetSyncSettings>();
+	if (!IsValid(settings))
+	{
+		return result;
+	}
+
+	UJsonApplyRegistry* registry = settings->registryAsset.LoadSynchronous();
+	if (!IsValid(registry))
+	{
+		return result;
+	}
+
+	auto ExportJson =
+		[&result](const FString& absolutePath, const FString& jsonText, FString& error)
+		{
+			if (!SaveGeneratedJsonFile(absolutePath, jsonText, error))
+			{
+				result.success = false;
+				result.errors.Add(MoveTemp(error));
+				return;
+			}
+
+			++result.updatedJsonFileCount;
+		};
+
+	for (const FJsonDataTableBinding& binding : registry->dataTableBindings)
+	{
+		if (binding.targetDataTable != savedAsset || binding.jsonRelativePath.IsEmpty())
+		{
+			continue;
+		}
+
+		result.wasHandled = true;
+		FString jsonText;
+		FString error;
+		if (!BuildDataTableJsonText(binding.targetDataTable, jsonText, error))
+		{
+			result.success = false;
+			result.errors.Add(MoveTemp(error));
+			continue;
+		}
+
+		ExportJson(MakeAbsoluteJsonPath(settings->dataTableJsonDirectory, binding.jsonRelativePath), jsonText, error);
+	}
+
+	for (const FJsonCurveTableBinding& binding : registry->curveTableBindings)
+	{
+		if (binding.targetCurveTable != savedAsset || binding.jsonRelativePath.IsEmpty())
+		{
+			continue;
+		}
+
+		result.wasHandled = true;
+		FString jsonText;
+		FString error;
+		if (!BuildCurveTableJsonText(binding.targetCurveTable, jsonText, error))
+		{
+			result.success = false;
+			result.errors.Add(MoveTemp(error));
+			continue;
+		}
+
+		ExportJson(MakeAbsoluteJsonPath(settings->curveTableJsonDirectory, binding.jsonRelativePath), jsonText, error);
+	}
+
+	for (const FJsonFloatCurveBinding& binding : registry->floatCurveBindings)
+	{
+		if (binding.targetFloatCurve != savedAsset || binding.jsonRelativePath.IsEmpty())
+		{
+			continue;
+		}
+
+		result.wasHandled = true;
+		FString jsonText;
+		FString error;
+		if (!BuildFloatCurveJsonText(binding.targetFloatCurve, jsonText, error))
+		{
+			result.success = false;
+			result.errors.Add(MoveTemp(error));
+			continue;
+		}
+
+		ExportJson(MakeAbsoluteJsonPath(settings->floatCurveJsonDirectory, binding.jsonRelativePath), jsonText, error);
+	}
+
+	for (const FJsonDataAssetBinding& binding : registry->dataAssetBindings)
+	{
+		if (binding.targetDataAsset != savedAsset || binding.jsonRelativePath.IsEmpty())
+		{
+			continue;
+		}
+
+		result.wasHandled = true;
+		FString jsonText;
+		FString error;
+		if (!BuildDataAssetJsonText(binding.targetDataAsset, jsonText, error))
+		{
+			result.success = false;
+			result.errors.Add(MoveTemp(error));
+			continue;
+		}
+
+		ExportJson(MakeAbsoluteJsonPath(settings->dataAssetJsonDirectory, binding.jsonRelativePath), jsonText, error);
+	}
+
+	return result;
+}
