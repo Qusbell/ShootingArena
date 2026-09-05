@@ -44,7 +44,17 @@ protected:
 	// (InitNewPlayer 시점엔 아직 PC 에 NetConnection 이 안 붙어 주소를 못 구합니다.)
 	virtual void PostLogin(APlayerController* NewPlayer) override;
 
+	// 플레이어가 나가면 "로비로" 투표 현황(전원 투표 여부)이 바뀔 수 있으므로 재확인합니다.
+	// PlayerState가 PlayerArray에서 실제로 빠지는 건 이 함수가 끝난 다음이라 다음 틱에 확인합니다.
+	virtual void Logout(AController* Exiting) override;
+
 public:
+	// 매치에 접속한 모든 인간 플레이어(AI 제외)가 "로비로"에 투표했는지 확인하고,
+	// 그렇다면(그리고 1명 이상 접속해 있다면) 로비로 collective ServerTravel 합니다.
+	// AMyPlayerState::Server_SetWantsReturnToLobby 와 Logout 에서 호출됩니다.
+	UFUNCTION(BlueprintCallable, Category = "Lobby")
+	void CheckReturnToLobbyVotes();
+
 	// 이 레벨이 열릴 때 붙은 URL 옵션 전체를 반환합니다 (예: "?AIEasy=2?AINormal=1?AIHard=0").
 	// AGameModeBase::OptionsString은 protected라서 블루프린트에서 못 읽는데,
 	// 매치 서버(BP_MultiplayerAIGameMode)가 스폰될 때 맵 이름 뒤에 붙여 넘긴
