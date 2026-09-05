@@ -1,7 +1,16 @@
 [
 	{
-		"Name": "27세변건호의인생최후의끌어치기",
-		"Character_ID": "27세변건호의인생최후의끌어치기",
+		"Name": "Dummy",
+		"Character_Name": "Dummy",
+		"Character_Sprite": "/Script/Engine.Texture2D'/Game/QuakeLike_1_0/GameFlow/UI/UI_Image/Map_Image/스타크래프트.스타크래프트'",
+		"Characteristic_ID": [
+			"Dummy"
+		]
+	},
+	{
+		"Name": "C01",
+		"Character_Name": "27세변건호의인생최후의끌어치기",
+		"Character_Sprite": "/Script/Engine.Texture2D'/Game/QuakeLike_1_0/GameFlow/UI/UI_Image/Map_Image/스타크래프트.스타크래프트'",
 		"Characteristic_ID": [
 			"BGH_Easy",
 			"BGH_Normal",
@@ -9,8 +18,9 @@
 		]
 	},
 	{
-		"Name": "26세한빛찬의풍차돌리기",
-		"Character_ID": "26세한빛찬의풍차돌리기",
+		"Name": "C02",
+		"Character_Name": "26세한빛찬의풍차돌리기",
+		"Character_Sprite": "/Script/Engine.Texture2D'/Game/QuakeLike_1_0/GameFlow/UI/UI_Image/Map_Image/스타크래프트.스타크래프트'",
 		"Characteristic_ID": [
 			"HBC_Easy",
 			"HBC_Normal",
@@ -18,8 +28,9 @@
 		]
 	},
 	{
-		"Name": "24세이준혁의인생최후의알리오올리오",
-		"Character_ID": "24세이준혁의인생최후의알리오올리오",
+		"Name": "C03",
+		"Character_Name": "24세이준혁의인생최후의알리오올리오",
+		"Character_Sprite": "/Script/Engine.Texture2D'/Game/QuakeLike_1_0/GameFlow/UI/UI_Image/Map_Image/스타크래프트.스타크래프트'",
 		"Characteristic_ID": [
 			"LJH_Easy",
 			"LJH_Normal",
@@ -27,8 +38,9 @@
 		]
 	},
 	{
-		"Name": "26세박장한의국밥속틀니압수",
-		"Character_ID": "26세박장한의국밥속틀니압수",
+		"Name": "C04",
+		"Character_Name": "26세박장한의국밥속틀니압수",
+		"Character_Sprite": "/Script/Engine.Texture2D'/Game/QuakeLike_1_0/GameFlow/UI/UI_Image/Map_Image/스타크래프트.스타크래프트'",
 		"Characteristic_ID": [
 			"PJH_Easy",
 			"PJH_Normal",
@@ -36,8 +48,9 @@
 		]
 	},
 	{
-		"Name": "24세양지성의인생최후의주식풀매수",
-		"Character_ID": "24세양지성의인생최후의주식풀매수",
+		"Name": "C05",
+		"Character_Name": "24세양지성의인생최후의주식풀매수",
+		"Character_Sprite": "/Script/Engine.Texture2D'/Game/QuakeLike_1_0/GameFlow/UI/UI_Image/Map_Image/스타크래프트.스타크래프트'",
 		"Characteristic_ID": [
 			"YJS_Easy",
 			"YJS_Normal",
@@ -45,8 +58,9 @@
 		]
 	},
 	{
-		"Name": "24세윤장혁의인생최후의팀프로젝트",
-		"Character_ID": "24세윤장혁의인생최후의팀프로젝트",
+		"Name": "C06",
+		"Character_Name": "24세윤장혁의인생최후의팀프로젝트",
+		"Character_Sprite": "/Script/Engine.Texture2D'/Game/QuakeLike_1_0/GameFlow/UI/UI_Image/Map_Image/스타크래프트.스타크래프트'",
 		"Characteristic_ID": [
 			"YJH_Easy",
 			"YJH_Normal",
